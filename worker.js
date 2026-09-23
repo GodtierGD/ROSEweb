@@ -4,17 +4,18 @@
  * Routes:
  *   GET /api/list              -> clan's rated beats, from AREDL (cached)
  *   GET /api/monthly           -> beats grouped by month, from D1 snapshots
- *   GET /api/progress          -> per-player progress, from D1
+ *   GET /api/progress          -> per-player progress, from the "PROGRESS" tab of a Google Sheet
  *   GET /api/videos            -> channel upload feed (non-YouTube-API), cached
  *   GET /api/unrated           -> rows from the "UNRATED" tab of a public Google Sheet
  *
  * Bindings expected (see wrangler.toml):
- *   DB                 D1 database        — monthly snapshots, progress, video cache rows
+ *   DB                 D1 database        — monthly snapshots, video cache rows
  *   CACHE               KV namespace       — short-lived cache for AREDL + Sheets responses
  *   AREDL_API_BASE      var                — e.g. "https://api.aredl.net"
  *   AREDL_API_KEY       secret             — set via `wrangler secret put AREDL_API_KEY`
  *   AREDL_CLAN_ID       var                — the clan's id/slug on AREDL, if the API needs it
- *   UNRATED_SHEET_ID    var                — the Google Sheet's id (the long string in its URL)
+ *   CLAN_SHEET_ID       var                — the Google Sheet's id (the long string in its URL);
+ *                                            backs both the "UNRATED" and "PROGRESS" tabs
  *   VIDEO_FEED_URL      var (optional)     — RSS/JSON feed for the channel's uploads
  */
 
@@ -111,18 +112,29 @@ async function handleMonthly(env) {
 }
 
 /* ============================================================
-   /api/progress — from D1
+   /api/progress — from the "PROGRESS" tab of the Google Sheet
    ============================================================ */
 async function handleProgress(env) {
-  const { results } = await env.DB.prepare(
-    `SELECT player, level, pct, status FROM progress ORDER BY player, pct DESC`
-  ).all();
+  const rows = await cached(env, "progress:v1", 300, async () => {
+    const raw = await fetchSheetRows(env, "PROGRESS");
+    // Expect sheet columns: player | level | pct | status
+    return raw
+      .filter((row) => row.player && row.level)
+      .map((row) => ({
+        player: row.player,
+        level: row.level,
+        pct: Number(row.pct) || 0,
+        status: row.status || (Number(row.pct) >= 100 ? "Completed" : "In progress"),
+      }));
+  });
 
   const byPlayer = {};
-  for (const row of results) {
+  for (const row of rows) {
     byPlayer[row.player] = byPlayer[row.player] || { player: row.player, entries: [] };
     byPlayer[row.player].entries.push({ level: row.level, pct: row.pct, status: row.status });
   }
+  // Highest progress first within each player, matching the old D1 ordering.
+  Object.values(byPlayer).forEach((p) => p.entries.sort((a, b) => b.pct - a.pct));
   return json(Object.values(byPlayer));
 }
 
@@ -155,35 +167,43 @@ function parseVideoFeed(xml) {
 }
 
 /* ============================================================
-   /api/unrated — reads the "UNRATED" tab of a public Google Sheet
-   via the gviz endpoint (no service account needed, sheet just
-   needs to be shared as "anyone with the link can view").
+   Google Sheets helper — reads a named tab of a public sheet via
+   the gviz endpoint (no service account needed, sheet just needs
+   to be shared as "anyone with the link can view"). Returns rows
+   as plain objects keyed by lowercased column header.
+   ============================================================ */
+async function fetchSheetRows(env, tabName) {
+  const sheetUrl =
+    `https://docs.google.com/spreadsheets/d/${env.CLAN_SHEET_ID}` +
+    `/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}`;
+
+  const res = await fetch(sheetUrl);
+  if (!res.ok) throw new Error(`Sheets fetch failed for tab "${tabName}": ${res.status}`);
+  const text = await res.text();
+
+  // Response is wrapped: google.visualization.Query.setResponse({...});
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  const payload = JSON.parse(text.slice(start, end + 1));
+
+  const cols = payload.table.cols.map((c, i) => (c.label || `col${i}`).trim().toLowerCase());
+  return payload.table.rows.map((r) => {
+    const row = {};
+    r.c.forEach((cell, i) => {
+      row[cols[i]] = cell ? (cell.f ?? cell.v) : "";
+    });
+    return row;
+  });
+}
+
+/* ============================================================
+   /api/unrated — reads the "UNRATED" tab of the Google Sheet
    ============================================================ */
 async function handleUnrated(env) {
   const data = await cached(env, "unrated:v1", 300, async () => {
-    const sheetUrl =
-      `https://docs.google.com/spreadsheets/d/${env.UNRATED_SHEET_ID}` +
-      `/gviz/tq?tqx=out:json&sheet=UNRATED`;
-
-    const res = await fetch(sheetUrl);
-    if (!res.ok) throw new Error(`Sheets fetch failed: ${res.status}`);
-    const text = await res.text();
-
-    // Response is wrapped: google.visualization.Query.setResponse({...});
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    const payload = JSON.parse(text.slice(start, end + 1));
-
-    const cols = payload.table.cols.map((c, i) => (c.label || `col${i}`).trim().toLowerCase());
-    return payload.table.rows
-      .map((r) => {
-        const row = {};
-        r.c.forEach((cell, i) => {
-          row[cols[i]] = cell ? (cell.f ?? cell.v) : "";
-        });
-        return row;
-      })
-      // Expect sheet columns: name | creator | verifier | note
+    const rows = await fetchSheetRows(env, "UNRATED");
+    // Expect sheet columns: name | creator | verifier | note
+    return rows
       .filter((row) => row.name)
       .map((row) => ({
         name: row.name,

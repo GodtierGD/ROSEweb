@@ -10,14 +10,9 @@ CREATE TABLE IF NOT EXISTS monthly_snapshots (
   beaten_at TEXT NOT NULL     -- ISO date, used to bucket into `month`
 );
 
-CREATE TABLE IF NOT EXISTS progress (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  player TEXT NOT NULL,
-  level TEXT NOT NULL,
-  pct INTEGER NOT NULL,
-  status TEXT NOT NULL,       -- "In progress" | "Completed"
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_progress_player ON progress(player);
 CREATE INDEX IF NOT EXISTS idx_monthly_month ON monthly_snapshots(month);
+
+-- `progress` is no longer used — /api/progress now reads the sheet's
+-- PROGRESS tab instead. Safe to drop if you already ran the old
+-- version of this migration and have an empty/unused progress table:
+--   DROP TABLE IF EXISTS progress;
