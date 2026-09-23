@@ -10,7 +10,7 @@ VIDEO_FEED_URL = "" # e.g. a YouTube channel's public RSS feed URL
 
 [[d1_databases]]
 binding = "DB"
-database_name = "rift-demonlist"
+database_name = "rose-demonlist"
 database_id = "YOUR_DATABASE_ID"
 
 [[kv_namespaces]]
