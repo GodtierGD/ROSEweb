@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Progress — RIFT Demonlist</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .player-block { margin-bottom: 30px; }
+  .player-block .head { display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
+  .player-block .head .name { font-family:var(--font-display); font-weight:700; font-size:20px; font-style:italic; }
+  .prog-row { display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .prog-row:last-child { border-bottom:none; }
+  .prog-row .lvl { width:170px; flex-shrink:0; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .prog-track { flex:1; height:10px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  .prog-fill { height:100%; border-radius:999px; background:linear-gradient(90deg, var(--accent-3), var(--accent)); }
+  .prog-row .pct { width:46px; text-align:right; font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--text-muted); }
+  .prog-row .status { width:110px; text-align:right; font-size:12px; color:var(--text-faint); }
+</style>
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Works in progress</div>
+    <h1>Progress</h1>
+    <p>What each clan member is currently grinding, and how far they've gotten. Anything at 100% has been fully completed.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container" id="progress-mount">
+    <div class="skel" style="height:180px;margin-bottom:20px;"></div>
+    <div class="skel" style="height:180px;opacity:.6;"></div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — built on the AREDL API. Not affiliated with or endorsed by AREDL.</footer>
+
+<script src="js/common.js"></script>
+<script>
+  renderNav("progress.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  function playerBlockHTML(p) {
+    const rows = p.entries.map(e => `
+      <div class="prog-row">
+        <div class="lvl">${e.level}</div>
+        <div class="prog-track"><div class="prog-fill" style="width:${e.pct}%;"></div></div>
+        <div class="pct">${e.pct}%</div>
+        <div class="status">${e.status}</div>
+      </div>
+    `).join("");
+    return `
+      <div class="player-block card">
+        <div class="head"><span class="name">${p.player}</span></div>
+        ${rows}
+      </div>
+    `;
+  }
+
+  (async () => {
+    const data = await apiGet("/progress", MOCK_PROGRESS);
+    const mount = document.getElementById("progress-mount");
+    mount.innerHTML = data.length
+      ? data.map(playerBlockHTML).join("")
+      : `<div class="empty-state"><div class="title">No progress logged</div>Nothing tracked yet.</div>`;
+  })();
+</script>
+</body>
+</html>

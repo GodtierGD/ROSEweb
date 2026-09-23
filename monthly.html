@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monthly — RIFT Demonlist</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Archive</div>
+    <h1>Monthly</h1>
+    <p>The hardest levels the clan beat each month. Snapshotted at the time of the beat, so this page won't change if a level's AREDL placement moves later.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div id="month-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div>
+    <div id="month-mount">
+      <div class="skel" style="height:104px;margin-bottom:12px;"></div>
+      <div class="skel" style="height:104px;margin-bottom:12px;opacity:.6;"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — built on the AREDL API. Not affiliated with or endorsed by AREDL.</footer>
+
+<script src="js/common.js"></script>
+<script>
+  renderNav("monthly.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  function renderMonth(months, active) {
+    const tabsEl = document.getElementById("month-tabs");
+    const keys = Object.keys(months);
+    tabsEl.innerHTML = keys.map(k => `
+      <button data-month="${k}" class="watch-link" style="${k === active ? 'border-color:var(--accent);' : ''}">${k}</button>
+    `).join("");
+    tabsEl.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => renderMonth(months, btn.dataset.month));
+    });
+
+    const rows = [...(months[active] || [])].sort((a, b) => a.rank - b.rank);
+    const mount = document.getElementById("month-mount");
+    mount.innerHTML = rows.length
+      ? rows.map((lvl, i) => levelCardHTML(lvl, i)).join("")
+      : `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${active}.</div>`;
+  }
+
+  (async () => {
+    const months = await apiGet("/monthly", MOCK_MONTHLY);
+    const first = Object.keys(months)[0];
+    renderMonth(months, first);
+  })();
+</script>
+</body>
+</html>

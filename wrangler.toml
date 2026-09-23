@@ -1,0 +1,24 @@
+name = "rift-demonlist"
+main = "worker/src/worker.js"
+compatibility_date = "2026-09-23"
+
+[vars]
+AREDL_API_BASE = "https://api.aredl.net"
+AREDL_CLAN_ID = "your-clan-id"
+UNRATED_SHEET_ID = "your-google-sheet-id"
+VIDEO_FEED_URL = "" # e.g. a YouTube channel's public RSS feed URL
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rift-demonlist"
+database_id = "YOUR_DATABASE_ID"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# Serve the static frontend/ folder from the same Worker, or deploy it
+# separately to Cloudflare Pages and point the frontend's CONFIG.apiBase
+# (frontend/js/common.js) at this Worker's URL. If serving together:
+# [assets]
+# directory = "./frontend"

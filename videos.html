@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Videos — RIFT Demonlist</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .video-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:18px; }
+  .video-card { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--surface); transition:border-color .15s ease; }
+  .video-card:hover { border-color:var(--border-strong); }
+  .video-thumb { aspect-ratio:16/9; background:linear-gradient(135deg,#241826,#150d1c); display:flex; align-items:center; justify-content:center; color:var(--text-faint); font-family:var(--font-display); font-size:13px; }
+  .video-body { padding:14px 16px; }
+  .video-body .title { font-weight:600; font-size:14.5px; margin-bottom:6px; line-height:1.35; }
+  .video-body .meta { font-size:12px; color:var(--text-faint); }
+</style>
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Latest uploads</div>
+    <h1>Videos</h1>
+    <p>New clips from the clan's channel — verifications, progress runs, and completions.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div class="video-grid" id="video-mount">
+      <div class="skel" style="height:190px;"></div>
+      <div class="skel" style="height:190px;opacity:.7;"></div>
+      <div class="skel" style="height:190px;opacity:.4;"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — video feed cached from the channel, not the YouTube API.</footer>
+
+<script src="js/common.js"></script>
+<script>
+  renderNav("videos.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  function videoCardHTML(v) {
+    return `
+      <a class="video-card" href="${v.url}" target="_blank" rel="noopener">
+        <div class="video-thumb">${v.thumb ? `<img src="${v.thumb}" alt="">` : "▶ Preview"}</div>
+        <div class="video-body">
+          <div class="title">${v.title}</div>
+          <div class="meta">${v.channel} — ${new Date(v.published).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}</div>
+        </div>
+      </a>
+    `;
+  }
+
+  (async () => {
+    const videos = await apiGet("/videos", MOCK_VIDEOS);
+    const mount = document.getElementById("video-mount");
+    mount.innerHTML = videos.length
+      ? videos.map(videoCardHTML).join("")
+      : `<div class="empty-state"><div class="title">No uploads yet</div>Check back soon.</div>`;
+  })();
+</script>
+</body>
+</html>

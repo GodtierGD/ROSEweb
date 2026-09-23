@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List — RIFT Demonlist</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Ranked by AREDL placement</div>
+    <h1>The List</h1>
+    <p>Every rated level a clan member has beaten, sorted hardest to easiest. Points and placement come straight from AREDL.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+      <input id="search" type="text" placeholder="Search level or player…"
+        style="flex:1;min-width:220px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
+      <select id="sort" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
+        <option value="rank">Sort: Rank</option>
+        <option value="points">Sort: Points</option>
+        <option value="name">Sort: Name</option>
+      </select>
+    </div>
+
+    <div id="list-mount">
+      <div class="skel" style="height:104px;margin-bottom:12px;"></div>
+      <div class="skel" style="height:104px;margin-bottom:12px;opacity:.7;"></div>
+      <div class="skel" style="height:104px;margin-bottom:12px;opacity:.4;"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — built on the AREDL API. Not affiliated with or endorsed by AREDL.</footer>
+
+<script src="js/common.js"></script>
+<script>
+  renderNav("list.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  let allLevels = [];
+
+  function draw() {
+    const q = document.getElementById("search").value.trim().toLowerCase();
+    const sort = document.getElementById("sort").value;
+
+    let rows = allLevels.filter(l =>
+      !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q) || l.creator.toLowerCase().includes(q)
+    );
+
+    if (sort === "rank") rows.sort((a, b) => a.rank - b.rank);
+    if (sort === "points") rows.sort((a, b) => b.points - a.points);
+    if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
+
+    const mount = document.getElementById("list-mount");
+    if (!rows.length) {
+      mount.innerHTML = `<div class="empty-state"><div class="title">No levels match</div>Try a different search term.</div>`;
+      return;
+    }
+    mount.innerHTML = rows.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+  }
+
+  (async () => {
+    allLevels = await apiGet("/list", MOCK_LIST);
+    draw();
+    document.getElementById("search").addEventListener("input", draw);
+    document.getElementById("sort").addEventListener("change", draw);
+  })();
+</script>
+</body>
+</html>

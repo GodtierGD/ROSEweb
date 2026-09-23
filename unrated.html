@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UNRATED — RIFT Demonlist</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  .unrated-row { border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; margin-bottom:10px; display:flex; align-items:center; gap:16px; }
+  .unrated-row .name { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:19px; flex:1; min-width:0; }
+  .unrated-row .by { font-size:13px; color:var(--text-muted); }
+  .unrated-row .note { font-size:12px; color:var(--text-faint); max-width:220px; text-align:right; }
+</style>
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Not yet on AREDL</div>
+    <h1>UNRATED</h1>
+    <p>Levels clan members have beaten that AREDL hasn't rated yet — sourced from the clan's tracking sheet, not the API.
+      Once a level gets an official placement it moves over to the <a href="list.html" style="color:var(--accent);text-decoration:underline;">List</a>.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div id="unrated-mount">
+      <div class="skel" style="height:72px;margin-bottom:10px;"></div>
+      <div class="skel" style="height:72px;margin-bottom:10px;opacity:.6;"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — this page reads a Google Sheet tab named "UNRATED" via the Worker's <code>/api/unrated</code> endpoint.</footer>
+
+<script src="js/common.js"></script>
+<script>
+  renderNav("unrated.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  function unratedRowHTML(row) {
+    return `
+      <div class="unrated-row">
+        <span class="pill pending">Pending</span>
+        <div style="flex:1;min-width:0;">
+          <div class="name">${row.name}</div>
+          <div class="by">by <b>${row.creator}</b> — beaten by <b>${row.verifier}</b></div>
+        </div>
+        <div class="note">${row.note || ""}</div>
+      </div>
+    `;
+  }
+
+  (async () => {
+    const rows = await apiGet("/unrated", MOCK_UNRATED);
+    const mount = document.getElementById("unrated-mount");
+    mount.innerHTML = rows.length
+      ? rows.map(unratedRowHTML).join("")
+      : `<div class="empty-state"><div class="title">Nothing pending</div>Every clan beat currently has an AREDL rating.</div>`;
+  })();
+</script>
+</body>
+</html>

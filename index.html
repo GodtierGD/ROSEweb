@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RIFT — Community Extreme Demon List</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container" style="padding-top:64px;">
+  <div class="page-head" style="padding-top:0;">
+    <div class="eyebrow">All beats, one clan</div>
+    <h1>The hardest levels our clan has beaten — ranked, verified, tracked.</h1>
+    <p>RIFT is a community demonlist built from our clan's completions on the
+      <a href="https://aredl.net" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;">AREDL</a>
+      ranking. Every entry here is a level a clan member has actually beaten — this is our own record of it, not a
+      copy of the official list.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+
+    <section class="section-label" style="margin-top:0;">How placement works</section>
+    <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;">
+      <div>
+        <div style="font-family:var(--font-display);font-weight:700;color:var(--accent);font-size:15px;margin-bottom:6px;">01 — Beat it</div>
+        <p style="color:var(--text-muted);font-size:14px;margin:0;">A clan member clears a rated level on AREDL with a legit, recorded run.</p>
+      </div>
+      <div>
+        <div style="font-family:var(--font-display);font-weight:700;color:var(--accent);font-size:15px;margin-bottom:6px;">02 — Submit</div>
+        <p style="color:var(--text-muted);font-size:14px;margin:0;">The run gets logged with its AREDL placement, points, and video proof.</p>
+      </div>
+      <div>
+        <div style="font-family:var(--font-display);font-weight:700;color:var(--accent);font-size:15px;margin-bottom:6px;">03 — Rank</div>
+        <p style="color:var(--text-muted);font-size:14px;margin:0;">The List page sorts every clan beat by its official AREDL difficulty.</p>
+      </div>
+      <div>
+        <div style="font-family:var(--font-display);font-weight:700;color:var(--accent);font-size:15px;margin-bottom:6px;">04 — Track</div>
+        <p style="color:var(--text-muted);font-size:14px;margin:0;">Ongoing attempts and partial progress live on the Progress page.</p>
+      </div>
+    </div>
+
+    <section class="section-label">Recent activity</section>
+    <div id="recent-list"></div>
+
+    <section class="section-label">Jump in</section>
+    <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
+      <p style="margin:0;color:var(--text-muted);max-width:44ch;">Unrated levels our members have beaten live on their own page, pulled straight from the clan's tracking sheet.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <a class="watch-link" href="list.html">View the List</a>
+        <a class="watch-link" href="unrated.html">See UNRATED beats</a>
+        <a class="watch-link" href="#" id="discord-link">Join Discord</a>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="container">
+  <span id="clan-name-footer"></span> Demonlist — built on the AREDL API. Not affiliated with or endorsed by AREDL.
+</footer>
+
+<script src="js/common.js"></script>
+<script>
+  renderNav("index.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+  document.getElementById("discord-link").href = CONFIG.discordUrl;
+
+  (async () => {
+    const data = await apiGet("/list", MOCK_LIST);
+    const recent = [...data].sort((a, b) => a.rank - b.rank).slice(0, 4);
+    document.getElementById("recent-list").innerHTML = recent.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+  })();
+</script>
+</body>
+</html>
