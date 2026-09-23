@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UNRATED — RIFT Demonlist</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="style.css">
 <style>
   .unrated-row { border:1px solid var(--border); border-radius:var(--radius); padding:16px 20px; margin-bottom:10px; display:flex; align-items:center; gap:16px; }
   .unrated-row .name { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:19px; flex:1; min-width:0; }
@@ -35,7 +35,7 @@
 
 <footer class="container"><span id="clan-name-footer"></span> Demonlist — this page reads a Google Sheet tab named "UNRATED" via the Worker's <code>/api/unrated</code> endpoint.</footer>
 
-<script src="js/common.js"></script>
+<script src="common.js"></script>
 <script>
   renderNav("unrated.html");
   document.getElementById("clan-name-footer").textContent = CONFIG.clanName;

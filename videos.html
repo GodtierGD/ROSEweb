@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Videos — RIFT Demonlist</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="style.css">
 <style>
   .video-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:18px; }
   .video-card { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--surface); transition:border-color .15s ease; }
@@ -38,7 +38,7 @@
 
 <footer class="container"><span id="clan-name-footer"></span> Demonlist — video feed cached from the channel, not the YouTube API.</footer>
 
-<script src="js/common.js"></script>
+<script src="common.js"></script>
 <script>
   renderNav("videos.html");
   document.getElementById("clan-name-footer").textContent = CONFIG.clanName;

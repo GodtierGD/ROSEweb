@@ -1,5 +1,5 @@
 name = "rift-demonlist"
-main = "worker/src/worker.js"
+main = "worker.js"
 compatibility_date = "2026-09-23"
 
 [vars]
@@ -17,8 +17,10 @@ database_id = "YOUR_DATABASE_ID"
 binding = "CACHE"
 id = "YOUR_KV_NAMESPACE_ID"
 
-# Serve the static frontend/ folder from the same Worker, or deploy it
-# separately to Cloudflare Pages and point the frontend's CONFIG.apiBase
-# (frontend/js/common.js) at this Worker's URL. If serving together:
+# Serve the static pages from the same Worker, or deploy them separately
+# to Cloudflare Pages and point CONFIG.apiBase (in common.js) at this
+# Worker's URL instead. If serving together, exclude the non-frontend
+# files so they aren't published as static assets:
 # [assets]
-# directory = "./frontend"
+# directory = "."
+# exclude = ["worker.js", "wrangler.toml", "0001_initial.sql", "README.md"]

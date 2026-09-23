@@ -3,14 +3,14 @@
 A community demonlist for a clan's AREDL beats: **Home, List, Monthly, Progress,
 Videos**, plus an **UNRATED** tab pulled live from a Google Sheet.
 
-Pages open standalone right now (open `frontend/index.html`) — every page falls
-back to mock data in `frontend/js/common.js` until the Worker API is live, so
-you can preview and tweak the design before touching the backend.
+Pages open standalone right now (open `index.html`) — every page falls back
+to mock data in `common.js` until the Worker API is live, so you can preview
+and tweak the design before touching the backend.
 
 ## Rename the clan
 
 Everything site-wide (name shown in the nav, footer, tagline, Discord link) is
-one object at the top of `frontend/js/common.js`:
+one object at the top of `common.js`:
 
 ```js
 const CONFIG = {
@@ -30,19 +30,19 @@ const CONFIG = {
    wrangler d1 create rift-demonlist
    wrangler kv namespace create CACHE
    ```
-3. Run the migration: `wrangler d1 execute rift-demonlist --file=migrations/0001_initial.sql`
+3. Run the migration: `wrangler d1 execute rift-demonlist --file=0001_initial.sql`
 4. Fill in `wrangler.toml`'s `[vars]`:
    - `AREDL_API_BASE` — AREDL's current API base URL (check their docs; it can change)
    - `AREDL_CLAN_ID` — your clan's id/slug as AREDL's API identifies it
    - `UNRATED_SHEET_ID` — see below
    - `VIDEO_FEED_URL` — a public RSS/Atom feed for the channel (most platforms expose one without needing an API key)
 5. `wrangler deploy`
-6. In `frontend/js/common.js`, set `CONFIG.apiBase` to your deployed Worker's
-   URL (e.g. `https://rift-demonlist.<subdomain>.workers.dev/api`).
+6. In `common.js`, set `CONFIG.apiBase` to your deployed Worker's URL (e.g.
+   `https://rift-demonlist.<subdomain>.workers.dev/api`).
 
-`worker/src/worker.js` has the exact response shape AREDL's API returns marked
-as an assumption in `handleList()` — check that against AREDL's actual docs
-before deploying, since the field names in this file are a best guess.
+`worker.js` has the exact response shape AREDL's API returns marked as an
+assumption in `handleList()` — check that against AREDL's actual docs before
+deploying, since the field names in this file are a best guess.
 
 ## Wire up the UNRATED Google Sheet
 
@@ -61,23 +61,22 @@ edits show up on the site shortly after you make them.
 ## Deploy the frontend
 
 Either:
-- **Cloudflare Pages**: point a Pages project at the `frontend/` folder, or
+- **Cloudflare Pages**: point a Pages project at this repo, or
 - **Same Worker**: uncomment the `[assets]` block in `wrangler.toml` to serve
-  `frontend/` and the API from one Worker.
+  the pages and the API from one Worker.
 
 ## Project structure
 
 ```
-frontend/
-  index.html      Home
-  list.html       List (full ranked demonlist)
-  monthly.html    Monthly (archived by month)
-  progress.html   Progress (per-player progress bars)
-  videos.html     Videos (channel upload feed)
-  unrated.html    UNRATED (Google Sheet tab)
-  css/style.css   Shared design system
-  js/common.js    Shared config, nav, API calls, mock data
-worker/src/worker.js   Cloudflare Worker: /api/list /api/monthly /api/progress /api/videos /api/unrated
-migrations/0001_initial.sql   D1 schema for monthly snapshots + progress
+index.html          Home
+list.html            List (full ranked demonlist)
+monthly.html         Monthly (archived by month)
+progress.html        Progress (per-player progress bars)
+videos.html           Videos (channel upload feed)
+unrated.html          UNRATED (Google Sheet tab)
+style.css             Shared design system
+common.js             Shared config, nav, API calls, mock data
+worker.js             Cloudflare Worker: /api/list /api/monthly /api/progress /api/videos /api/unrated
+0001_initial.sql       D1 schema for monthly snapshots + progress
 wrangler.toml
 ```
