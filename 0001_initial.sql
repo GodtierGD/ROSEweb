@@ -1,13 +1,13 @@
 CREATE TABLE IF NOT EXISTS monthly_snapshots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  month TEXT NOT NULL,        -- e.g. "September 2026"
+  month TEXT NOT NULL,     
   rank INTEGER NOT NULL,
   name TEXT NOT NULL,
   creator TEXT NOT NULL,
   verifier TEXT NOT NULL,
   points REAL NOT NULL,
   video_url TEXT,
-  beaten_at TEXT NOT NULL     -- ISO date, used to bucket into `month`
+  beaten_at TEXT NOT NULL 
 );
 
 CREATE INDEX IF NOT EXISTS idx_monthly_month ON monthly_snapshots(month);
