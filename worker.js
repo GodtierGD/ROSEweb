@@ -1,5 +1,5 @@
 /**
- * RIFT Demonlist — Cloudflare Worker API
+ * ROSE Demonlist — Cloudflare Worker API
  *
  * Routes:
  *   GET /api/list              -> clan's rated beats, from AREDL (cached)
@@ -12,6 +12,7 @@
  *   DB                 D1 database        — monthly snapshots, progress, video cache rows
  *   CACHE               KV namespace       — short-lived cache for AREDL + Sheets responses
  *   AREDL_API_BASE      var                — e.g. "https://api.aredl.net"
+ *   AREDL_API_KEY       secret             — set via `wrangler secret put AREDL_API_KEY`
  *   AREDL_CLAN_ID       var                — the clan's id/slug on AREDL, if the API needs it
  *   UNRATED_SHEET_ID    var                — the Google Sheet's id (the long string in its URL)
  *   VIDEO_FEED_URL      var (optional)     — RSS/JSON feed for the channel's uploads
@@ -60,7 +61,12 @@ async function handleList(env, ctx) {
   const data = await cached(env, "list:v1", 300, async () => {
     // AREDL exposes the full rated list; adjust the path/shape to match
     // whatever the current AREDL API contract is at deploy time.
-    const res = await fetch(`${env.AREDL_API_BASE}/api/list`);
+    // Auth scheme assumed as a bearer token — swap this for whatever
+    // AREDL's docs actually specify (custom header, query param, etc.)
+    // if it turns out to be different.
+    const res = await fetch(`${env.AREDL_API_BASE}/api/list`, {
+      headers: { Authorization: `Bearer ${env.AREDL_API_KEY}` },
+    });
     if (!res.ok) throw new Error(`AREDL list fetch failed: ${res.status}`);
     const levels = await res.json();
 

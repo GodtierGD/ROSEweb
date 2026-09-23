@@ -1,14 +1,14 @@
 /* ============================================================
-   RIFT Demonlist — shared front-end logic
+   ROSE Demonlist — shared front-end logic
    Rename the clan in CONFIG.clanName. Point CONFIG.apiBase at your
    deployed Worker once it's live; until then every fetch() below
    falls back to the MOCK_* data at the bottom of this file so the
    pages render standalone.
    ============================================================ */
 const CONFIG = {
-  clanName: "RIFT",
+  clanName: "ROSE",
   tagline: "Community Extreme Demon List",
-  apiBase: "/api", // e.g. "https://rift-demonlist.your-subdomain.workers.dev/api"
+  apiBase: "/api", // e.g. "https://roseweb.your-subdomain.workers.dev/api"
   discordUrl: "#",
 };
 

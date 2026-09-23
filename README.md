@@ -1,4 +1,4 @@
-# RIFT Demonlist
+# ROSE Demonlist
 
 A community demonlist for a clan's AREDL beats: **Home, List, Monthly, Progress,
 Videos**, plus an **UNRATED** tab pulled live from a Google Sheet.
@@ -14,7 +14,7 @@ one object at the top of `common.js`:
 
 ```js
 const CONFIG = {
-  clanName: "RIFT",
+  clanName: "ROSE",
   tagline: "Community Extreme Demon List",
   apiBase: "/api",
   discordUrl: "#",
@@ -38,7 +38,7 @@ const CONFIG = {
    - `VIDEO_FEED_URL` — a public RSS/Atom feed for the channel (most platforms expose one without needing an API key)
 5. `wrangler deploy`
 6. In `common.js`, set `CONFIG.apiBase` to your deployed Worker's URL (e.g.
-   `https://rift-demonlist.<subdomain>.workers.dev/api`).
+   `https://roseweb.<subdomain>.workers.dev/api`).
 
 `worker.js` has the exact response shape AREDL's API returns marked as an
 assumption in `handleList()` — check that against AREDL's actual docs before
