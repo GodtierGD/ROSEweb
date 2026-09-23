@@ -11,11 +11,11 @@ VIDEO_FEED_URL = "" # e.g. a YouTube channel's public RSS feed URL
 [[d1_databases]]
 binding = "DB"
 database_name = "rose-demonlist"
-database_id = "YOUR_DATABASE_ID"
+database_id = "5dcaf0a1-2c8a-4488-a79d-5b1176c2f50a"
 
 [[kv_namespaces]]
 binding = "CACHE"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "dc51253cc0ea4e559b6b76acc2765349"
 
 # Serve the static pages from the same Worker, or deploy them separately
 # to Cloudflare Pages and point CONFIG.apiBase (in common.js) at this
