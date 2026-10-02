@@ -76,10 +76,16 @@ shortly after you make them.
 
 ## Deploy the frontend
 
-Either:
-- **Cloudflare Pages**: point a Pages project at this repo, or
-- **Same Worker**: uncomment the `[assets]` block in `wrangler.toml` to serve
-  the pages and the API from one Worker.
+`wrangler.toml`'s `[assets]` block already serves `index.html`, `style.css`,
+`common.js` etc. straight from this same Worker — visiting the Worker's own
+`*.workers.dev` URL (or a custom domain pointed at it) serves the site.
+`.assetsignore` keeps the non-frontend files (`worker.js`, `wrangler.toml`,
+the migration, this README) from being published as downloadable pages.
+
+If you'd rather split the frontend onto Cloudflare Pages instead (its own
+project, its own URL), remove the `[assets]` block and point a Pages project
+at this repo instead — just make sure `CONFIG.apiBase` in `common.js` points
+at the Worker's URL in that case, since they'd no longer share one origin.
 
 ## Project structure
 
