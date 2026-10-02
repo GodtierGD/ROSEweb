@@ -8,18 +8,24 @@ AREDL_CLAN_ID = "f362d293-cb04-40e9-b86d-5ef2001a596c"
 UNRATED_SHEET_ID = "1jYtaUjjpRIWitMcte8XPcKtLTKcx1ZsM4J2wswqQNJE"
 VIDEO_FEED_URL = "" # e.g. a YouTube channel's public RSS feed URL
 
-[[d1_databases]]
-binding = "DB"
-database_name = "rose-demonlist"
-database_id = "5dcaf0a1-2c8a-4488-a79d-5b1176c2f50a"
-
 [[kv_namespaces]]
 binding = "CACHE"
 id = "dc51253cc0ea4e559b6b76acc2765349"
 
+# D1 is no longer used anywhere in worker.js — /api/monthly is now computed
+# live from AREDL instead of D1 snapshots. The "rose-demonlist" database can
+# stay bound here harmlessly (it's just unused), or you can delete this
+# block plus the database itself from the Cloudflare dashboard if you'd
+# rather tidy up. Leaving it bound costs nothing either way.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "rose-demonlist"
+# database_id = "this is filled in"
+ 
 # Serves index.html, style.css, common.js etc. straight from this same
 # Worker. Static assets are matched first; anything that isn't a static
 # file (like /api/*) falls through to the fetch handler in worker.js.
 # Non-frontend files are excluded via .assetsignore in the repo root.
 [assets]
 directory = "."
+ 
