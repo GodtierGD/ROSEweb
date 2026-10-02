@@ -61,7 +61,7 @@
           <div class="n">${i + 1}</div>
           <div class="who">
             <div class="lvl">${esc(r.level)}</div>
-            <div class="plr">${flagHTML(r.country)}${esc(r.player)}</div>
+            <div class="plr">${esc(r.player)}${flagHTML(r.country)}</div>
           </div>
           <div class="att">${Number(r.attempts).toLocaleString()}${r.videoUrl ? `<a href="${esc(r.videoUrl)}" target="_blank" rel="noopener">▶</a>` : ""}</div>
         </div>`).join("")

@@ -52,7 +52,7 @@
     return `
       <div class="member-row">
         <div class="m-rank ${tierClass(m.rank)}">#${m.rank}</div>
-        <div class="m-name">${flagHTML(m.country)}${esc(m.name)}</div>
+        <div class="m-name">${esc(m.name)}${flagHTML(m.country)}</div>
         <span class="pill points">${Math.round(m.points).toLocaleString()} pts</span>
         ${yt}
       </div>`;

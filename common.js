@@ -110,7 +110,7 @@ function levelCardHTML(level, index) {
       <div class="divider"></div>
       <div class="level-meta">
         <div class="name">${level.name}</div>
-        <div class="by">${flagHTML(level.verifierCountry)}<b>${level.verifier}</b></div>
+        <div class="by"><b>${level.verifier}</b>${flagHTML(level.verifierCountry)}</div>
         ${following}
       </div>
       <div class="level-side">
