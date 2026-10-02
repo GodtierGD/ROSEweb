@@ -1,7 +1,7 @@
 # ROSE Demonlist
 
-A community demonlist for a clan's AREDL beats: **Home, List, Monthly, Progress,
-Videos**, plus an **UNRATED** tab pulled live from a Google Sheet.
+A community demonlist for a clan's AREDL beats: **Home, List, Monthly, Members,
+Videos, Unrated, Progress, Other**.
 
 Pages open standalone right now (open `index.html`) — every page falls back
 to mock data in `common.js` until the Worker API is live, so you can preview
@@ -24,16 +24,15 @@ const CONFIG = {
 ## Deploy the Worker
 
 1. `npm install -g wrangler` (if you don't have it)
-2. Create the D1 database and KV namespace, then paste their ids into
+2. Create the KV namespace, then paste its id into
    `wrangler.toml`:
    ```
-   wrangler d1 create rift-demonlist
    wrangler kv namespace create CACHE
    ```
-3. Run the migration: `wrangler d1 execute rift-demonlist --file=0001_initial.sql`
+3. (D1 is no longer used — skip any migration.)
 4. Fill in `wrangler.toml`'s `[vars]`:
    - `AREDL_API_BASE` — AREDL's current API base URL (check their docs; it can change)
-   - `CLAN_SHEET_ID` — see below (backs the Records, UNRATED, and PROGRESS tabs)
+   - `CLAN_SHEET_ID` — see below
    - `VIDEO_FEED_URL` — a public RSS/Atom feed for the channel (most platforms expose one without needing an API key)
 5. `wrangler deploy`
 6. In `common.js`, set `CONFIG.apiBase` to your deployed Worker's URL (e.g.
@@ -44,35 +43,27 @@ const CONFIG = {
 confirmed endpoints, but worth re-checking against AREDL's docs if either
 ever starts 404ing, since public APIs do move.
 
-## Wire up the Google Sheet (Records + UNRATED + Progress)
+## Wire up the Google Sheet (Unrated, Progress, Other, Members)
 
-`/api/list`, `/api/unrated`, and `/api/progress` all read from the same
-Google Sheet, each from their own tab.
+Everything below reads one Google Sheet, each feature from its own tab.
 
-1. In the Google Sheet, make sure there are three tabs, named exactly
-   `Records`, `UNRATED`, and `PROGRESS`:
-   - `Records` columns: `Player`, `Record` (the level's exact AREDL name),
-     `Date` (dd/mm/yyyy), `Completion` (video link — leave blank to fall
-     back to AREDL's own verification video). One row per completion; if
-     several clan members beat the same level, give each their own row and
-     the site sorts them by date, crediting the earliest as the verifier
-     and listing the rest as "also beaten by …". A `Record` that doesn't
-     exactly match an AREDL level name gets skipped rather than crashing
-     the list — check `wrangler tail` for a warning naming the likely typo.
+1. Create tabs named exactly (the tab names stay uppercase, the site labels don't):
    - `UNRATED` columns: `name`, `creator`, `verifier` (or `player`), `note`
-   - `PROGRESS` columns: `player`, `level`, `pct` (a number, 0–100), `status`
-     (optional — if left blank, it's inferred as "Completed" at 100% and
-     "In progress" otherwise)
+   - `PROGRESS` columns: `player`, `level`, `pct` (0-100), `status` (optional)
+   - `OTHER` columns: `type`, `player`, `level`, `attempts`, `video` (optional).
+     `type` is `High` (most attempts) or `Low` (fewest attempts); the site shows the top 10 of each.
+   - `MEMBERS` (optional) columns: `player`, `youtube` — adds a YouTube button on the Members page.
+     `player` must match the member's AREDL display name.
 2. Share the sheet as **"Anyone with the link can view"**.
-3. Copy the sheet's id out of its URL:
-   `https://docs.google.com/spreadsheets/d/`**`THIS_PART`**`/edit`
-4. Paste that id into `CLAN_SHEET_ID` in `wrangler.toml`.
+3. Put the sheet id (the part between `/d/` and `/edit` in its URL) in `CLAN_SHEET_ID` in `wrangler.toml`.
 
-The Worker reads each tab through Google's `gviz` endpoint
-(`/gviz/tq?tqx=out:json&sheet=<tab name>`) — no API key or service account
-needed, just a publicly viewable sheet. Each is cached for 5 minutes per
-request (`fetchSheetRows` in `worker.js`), so sheet edits show up on the site
-shortly after you make them.
+Each tab is cached for 5 minutes. The old `Records` tab is no longer used — list and monthly come straight from AREDL.
+
+## Members, flags and backgrounds
+
+- `/api/members` ranks the clan by AREDL points using the clan endpoint's `members_points`; flags come from each member's AREDL country code (shown via flagcdn images).
+- Level card backgrounds try the level's in-game thumbnail first, then fall back to the completion video's YouTube thumbnail.
+- Every page has Open Graph tags so links unfurl nicely on Discord. To add a preview image, add an `og:image` meta tag with an absolute URL to each page.
 
 ## Deploy the frontend
 

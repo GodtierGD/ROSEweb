@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>List — ROSE Demonlist</title>
+<meta name="description" content="Every rated level a ROSE member has beaten, sorted hardest to easiest.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ROSE Demonlist">
+<meta property="og:title" content="The List — ROSE Demonlist">
+<meta property="og:description" content="Every rated level a ROSE member has beaten, sorted hardest to easiest.">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#ff3b52">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -51,7 +58,7 @@
     const sort = document.getElementById("sort").value;
 
     let rows = allLevels.filter(l =>
-      !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q) || l.creator.toLowerCase().includes(q)
+      !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q)
     );
 
     if (sort === "rank") rows.sort((a, b) => a.rank - b.rank);

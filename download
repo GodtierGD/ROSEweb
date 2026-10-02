@@ -1,0 +1,8 @@
+worker.js
+wrangler.toml
+0001_initial.sql
+README.md
+.assetsignore
+.git
+.wrangler
+node_modules

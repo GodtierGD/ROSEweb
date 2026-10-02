@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Members — ROSE Demonlist</title>
+<meta name="description" content="The ROSE clan leaderboard, ranked by AREDL points.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ROSE Demonlist">
+<meta property="og:title" content="Members — ROSE Demonlist">
+<meta property="og:description" content="The ROSE clan leaderboard, ranked by AREDL points.">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#ff3b52">
+<link rel="stylesheet" href="style.css">
+<style>
+  .member-row { position:relative; display:flex; align-items:center; gap:18px; padding:16px 22px; margin-bottom:10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
+  .member-row:hover { border-color:var(--border-strong); }
+  .member-row .m-rank { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:30px; min-width:62px; color:var(--accent); line-height:1; }
+  .member-row .m-rank.tier-mid { color:var(--accent-3); }
+  .member-row .m-rank.tier-low { color:var(--accent-cool); }
+  .member-row .m-name { flex:1; min-width:0; font-family:var(--font-display); font-weight:700; font-style:italic; font-size:21px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style>
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Clan leaderboard</div>
+    <h1>Members</h1>
+    <p>Every clan member ranked by their AREDL points. Each member's share of a level is split between the clan members who beat it.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container" id="members-mount">
+    <div class="skel" style="height:64px;margin-bottom:10px;"></div>
+    <div class="skel" style="height:64px;margin-bottom:10px;opacity:.7;"></div>
+    <div class="skel" style="height:64px;margin-bottom:10px;opacity:.4;"></div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — built on the AREDL API. Not affiliated with or endorsed by AREDL.</footer>
+
+<script src="common.js"></script>
+<script>
+  renderNav("members.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  function memberRowHTML(m) {
+    const yt = m.youtube ? `<a class="watch-link" href="${esc(m.youtube)}" target="_blank" rel="noopener"><span>YouTube</span> ▶</a>` : "";
+    return `
+      <div class="member-row">
+        <div class="m-rank ${tierClass(m.rank)}">#${m.rank}</div>
+        <div class="m-name">${flagHTML(m.country)}${esc(m.name)}</div>
+        <span class="pill points">${Math.round(m.points).toLocaleString()} pts</span>
+        ${yt}
+      </div>`;
+  }
+
+  (async () => {
+    const members = await apiGet("/members", MOCK_MEMBERS);
+    document.getElementById("members-mount").innerHTML = members.length
+      ? members.map(memberRowHTML).join("")
+      : `<div class="empty-state"><div class="title">No members found</div>The clan has no points on AREDL yet.</div>`;
+  })();
+</script>
+</body>
+</html>

@@ -16,9 +16,11 @@ const NAV_ITEMS = [
   { href: "index.html", label: "Home" },
   { href: "list.html", label: "List" },
   { href: "monthly.html", label: "Monthly" },
-  { href: "progress.html", label: "Progress" },
+  { href: "members.html", label: "Members" },
   { href: "videos.html", label: "Videos" },
-  { href: "unrated.html", label: "UNRATED", unrated: true },
+  { href: "unrated.html", label: "Unrated", unrated: true },
+  { href: "progress.html", label: "Progress" },
+  { href: "other.html", label: "Other" },
 ];
 
 function renderNav(activeHref) {
@@ -80,6 +82,20 @@ function fallbackGradient(seed) {
   return `radial-gradient(circle at 30% 30%, hsl(${h} 90% 45%) 0%, hsl(${(h + 40) % 360} 70% 15%) 55%, #0b0a0e 100%)`;
 }
 
+const COUNTRY_NUM_TO_ISO2 = {"533":"aw","4":"af","24":"ao","660":"ai","248":"ax","8":"al","20":"ad","784":"ae","32":"ar","51":"am","16":"as","10":"aq","260":"tf","28":"ag","36":"au","40":"at","31":"az","108":"bi","56":"be","204":"bj","535":"bq","854":"bf","50":"bd","100":"bg","48":"bh","44":"bs","70":"ba","652":"bl","112":"by","84":"bz","60":"bm","68":"bo","76":"br","52":"bb","96":"bn","64":"bt","74":"bv","72":"bw","140":"cf","124":"ca","166":"cc","756":"ch","152":"cl","156":"cn","384":"ci","120":"cm","180":"cd","178":"cg","184":"ck","170":"co","174":"km","132":"cv","188":"cr","192":"cu","531":"cw","162":"cx","136":"ky","196":"cy","203":"cz","276":"de","262":"dj","212":"dm","208":"dk","214":"do","12":"dz","218":"ec","818":"eg","232":"er","732":"eh","724":"es","233":"ee","231":"et","246":"fi","242":"fj","238":"fk","250":"fr","234":"fo","583":"fm","266":"ga","826":"gb","268":"ge","831":"gg","288":"gh","292":"gi","324":"gn","312":"gp","270":"gm","624":"gw","226":"gq","300":"gr","308":"gd","304":"gl","320":"gt","254":"gf","316":"gu","328":"gy","344":"hk","334":"hm","340":"hn","191":"hr","332":"ht","348":"hu","360":"id","833":"im","356":"in","86":"io","372":"ie","364":"ir","368":"iq","352":"is","376":"il","380":"it","388":"jm","832":"je","400":"jo","392":"jp","398":"kz","404":"ke","417":"kg","116":"kh","296":"ki","659":"kn","410":"kr","414":"kw","418":"la","422":"lb","430":"lr","434":"ly","662":"lc","438":"li","144":"lk","426":"ls","440":"lt","442":"lu","428":"lv","446":"mo","663":"mf","504":"ma","492":"mc","498":"md","450":"mg","462":"mv","484":"mx","584":"mh","807":"mk","466":"ml","470":"mt","104":"mm","499":"me","496":"mn","580":"mp","508":"mz","478":"mr","500":"ms","474":"mq","480":"mu","454":"mw","458":"my","175":"yt","516":"na","540":"nc","562":"ne","574":"nf","566":"ng","558":"ni","570":"nu","528":"nl","578":"no","524":"np","520":"nr","554":"nz","512":"om","586":"pk","591":"pa","612":"pn","604":"pe","608":"ph","585":"pw","598":"pg","616":"pl","630":"pr","408":"kp","620":"pt","600":"py","275":"ps","258":"pf","634":"qa","638":"re","642":"ro","643":"ru","646":"rw","682":"sa","729":"sd","686":"sn","702":"sg","239":"gs","654":"sh","744":"sj","90":"sb","694":"sl","222":"sv","674":"sm","706":"so","666":"pm","688":"rs","728":"ss","678":"st","740":"sr","703":"sk","705":"si","752":"se","748":"sz","534":"sx","690":"sc","760":"sy","796":"tc","148":"td","768":"tg","764":"th","762":"tj","772":"tk","795":"tm","626":"tl","776":"to","780":"tt","788":"tn","792":"tr","798":"tv","158":"tw","834":"tz","800":"ug","804":"ua","581":"um","858":"uy","840":"us","860":"uz","336":"va","670":"vc","862":"ve","92":"vg","850":"vi","704":"vn","548":"vu","876":"wf","882":"ws","887":"ye","710":"za","894":"zm","716":"zw"};
+
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+// AREDL gives countries as ISO 3166-1 numeric codes. Flags are images (flagcdn)
+// because flag emoji don't render on Windows.
+function flagHTML(num) {
+  const iso = COUNTRY_NUM_TO_ISO2[num];
+  if (!iso) return "";
+  return `<img class="flag" src="https://flagcdn.com/24x18/${iso}.png" srcset="https://flagcdn.com/48x36/${iso}.png 2x" width="20" height="15" alt="${iso.toUpperCase()}" title="${iso.toUpperCase()}" loading="lazy">`;
+}
+
 function levelCardHTML(level, index) {
   const tier = tierClass(level.rank);
   const bgStyle = level.bg ? `background-image:url('${level.bg}');background-size:cover;background-position:center;` : `background:${fallbackGradient(index)};`;
@@ -94,7 +110,7 @@ function levelCardHTML(level, index) {
       <div class="divider"></div>
       <div class="level-meta">
         <div class="name">${level.name}</div>
-        <div class="by">by <b>${level.creator}</b> — beaten by <b>${level.verifier}</b></div>
+        <div class="by">${flagHTML(level.verifierCountry)}<b>${level.verifier}</b></div>
         ${following}
       </div>
       <div class="level-side">
@@ -141,18 +157,31 @@ function resolveYouTubeThumbnail(videoId) {
 // the same container and level array used to build it. Progressively
 // upgrades each card's blurred placeholder to its real video thumbnail
 // without blocking the initial render.
+function loadImageOk(url, minWidth = 1) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth >= minWidth ? url : null);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
 function hydrateThumbnails(container, levels) {
-  levels.forEach((level, i) => {
-    const videoId = extractYouTubeId(level.videoUrl);
-    if (!videoId) return;
+  levels.forEach(async (level, i) => {
     const card = container.querySelector(`[data-card="${i}"] .bg-layer`);
     if (!card) return;
-    resolveYouTubeThumbnail(videoId).then((url) => {
-      if (!url) return;
-      card.style.backgroundImage = `url('${url}')`;
-      card.style.backgroundSize = "cover";
-      card.style.backgroundPosition = "center";
-    });
+    let url = null;
+    // 1) the level's own in-game thumbnail (community thumbnail service)
+    if (level.levelId) url = await loadImageOk(`https://levelthumbs.prevter.me/thumbnail/${level.levelId}/small`);
+    // 2) fall back to the completion video's YouTube thumbnail
+    if (!url) {
+      const videoId = extractYouTubeId(level.videoUrl);
+      if (videoId) url = await resolveYouTubeThumbnail(videoId);
+    }
+    if (!url) return;
+    card.style.backgroundImage = `url('${url}')`;
+    card.style.backgroundSize = "cover";
+    card.style.backgroundPosition = "center";
   });
 }
 
@@ -209,3 +238,21 @@ const MOCK_UNRATED = [
   { name: "New Frontier", creator: "Zenthos", verifier: "Comzy", note: "Awaiting rate — submitted to mod team" },
   { name: "Hollow Point", creator: "ryamu", verifier: "Player12", note: "Under review" },
 ];
+
+const MOCK_MEMBERS = [
+  { rank: 1, name: "Skelezavr", points: 3120.5, country: 643, youtube: "#" },
+  { rank: 2, name: "Comzy", points: 2874.1, country: 826, youtube: "#" },
+  { rank: 3, name: "Yaser", points: 1990.8, country: 840, youtube: null },
+  { rank: 4, name: "Player12", points: 842.3, country: 276, youtube: null },
+];
+
+const MOCK_OTHER = {
+  highest: [
+    { player: "Comzy", level: "Silent Clubstep", attempts: 48210, country: 826, videoUrl: "#" },
+    { player: "Skelezavr", level: "Acheron", attempts: 31544, country: 643, videoUrl: "#" },
+  ],
+  lowest: [
+    { player: "Yaser", level: "Tartarus", attempts: 14, country: 840, videoUrl: "#" },
+    { player: "Player12", level: "Windy Landscape", attempts: 37, country: 276, videoUrl: "#" },
+  ],
+};

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Other — ROSE Demonlist</title>
+<meta name="description" content="Most and fewest attempts to beat a level — top 10 of each.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ROSE Demonlist">
+<meta property="og:title" content="Other — ROSE Demonlist">
+<meta property="og:description" content="Most and fewest attempts to beat a level — top 10 of each.">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#ff3b52">
+<link rel="stylesheet" href="style.css">
+<style>
+  .other-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:22px; align-items:start; }
+  .att-row { display:flex; align-items:center; gap:14px; padding:11px 0; border-bottom:1px solid var(--border); }
+  .att-row:last-child { border-bottom:none; }
+  .att-row .n { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:20px; width:38px; color:var(--text-faint); }
+  .att-row .who { flex:1; min-width:0; }
+  .att-row .who .lvl { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .att-row .who .plr { font-size:13px; color:var(--text-muted); margin-top:2px; }
+  .att-row .att { font-family:var(--font-display); font-weight:700; font-size:18px; color:var(--text); white-space:nowrap; }
+  .att-row .att a { margin-left:10px; font-size:13px; color:var(--text-muted); }
+  .att-row .att a:hover { color:var(--accent); }
+  .att-title { font-family:var(--font-display); font-weight:700; font-size:18px; margin-bottom:6px; }
+  .att-sub { font-size:13px; color:var(--text-faint); margin-bottom:10px; }
+</style>
+</head>
+<body>
+<nav class="site-nav" id="site-nav"></nav>
+
+<header class="container">
+  <div class="page-head">
+    <div class="eyebrow">Extremes</div>
+    <h1>Other</h1>
+    <p>The most and fewest attempts it took a clan member to beat a level — top 10 of each.</p>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div class="other-grid" id="other-mount">
+      <div class="skel" style="height:420px;"></div>
+      <div class="skel" style="height:420px;opacity:.6;"></div>
+    </div>
+  </div>
+</main>
+
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — this page reads a Google Sheet tab named "OTHER" via the Worker's <code>/api/other</code> endpoint.</footer>
+
+<script src="common.js"></script>
+<script>
+  renderNav("other.html");
+  document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
+
+  function attemptsCardHTML(title, sub, rows) {
+    const body = rows.length
+      ? rows.map((r, i) => `
+        <div class="att-row">
+          <div class="n">${i + 1}</div>
+          <div class="who">
+            <div class="lvl">${esc(r.level)}</div>
+            <div class="plr">${flagHTML(r.country)}${esc(r.player)}</div>
+          </div>
+          <div class="att">${Number(r.attempts).toLocaleString()}${r.videoUrl ? `<a href="${esc(r.videoUrl)}" target="_blank" rel="noopener">▶</a>` : ""}</div>
+        </div>`).join("")
+      : `<div class="empty-state"><div class="title">Nothing logged</div>Add rows to the OTHER sheet tab.</div>`;
+    return `<div class="card"><div class="att-title">${title}</div><div class="att-sub">${sub}</div>${body}</div>`;
+  }
+
+  (async () => {
+    const data = await apiGet("/other", MOCK_OTHER);
+    document.getElementById("other-mount").innerHTML =
+      attemptsCardHTML("Most attempts", "Longest grinds to a completion", data.highest || []) +
+      attemptsCardHTML("Fewest attempts", "Cleanest, luckiest first tries", data.lowest || []);
+  })();
+</script>
+</body>
+</html>
