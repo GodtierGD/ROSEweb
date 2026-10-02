@@ -44,7 +44,7 @@ export default {
       if (pathname === "/api/progress") return await handleProgress(env, ctx);
       if (pathname === "/api/videos") return await handleVideos(env, ctx);
       if (pathname === "/api/unrated") return await handleUnrated(env, ctx);
-      if (pathname === "/api/members") return await handleMembers(env, ctx);
+      if (pathname === "/api/members") return await handleMembers(env, ctx, request);
       if (pathname === "/api/other") return await handleOther(env, ctx);
       return json({ error: "not found" }, 404);
     } catch (err) {
@@ -274,20 +274,39 @@ async function handleUnrated(env) {
    profile (capped to stay under Workers' subrequest limit). Optional
    "MEMBERS" sheet tab (player | youtube) adds a channel link per member.
    ============================================================ */
+// AREDL's docs don't spell out the shape of a `members_points` entry, so find
+// the points figure by looking for a numeric field whose name mentions
+// points/score/contribution (top level first, then one level down).
+function extractPoints(entry) {
+  const looksLikePoints = (k) => /point|score|contrib/i.test(k);
+  const toNum = (v) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+  for (const [k, v] of Object.entries(entry)) {
+    if (looksLikePoints(k) && Number.isFinite(toNum(v))) return toNum(v);
+  }
+  for (const v of Object.values(entry)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      for (const [k2, v2] of Object.entries(v)) {
+        if (looksLikePoints(k2) && Number.isFinite(toNum(v2))) return toNum(v2);
+      }
+    }
+  }
+  return 0;
+}
+ 
 async function getMembersCached(env) {
-  return cached(env, "members:v1", 600, async () => {
+  return cached(env, "members:v2", 600, async () => {
     const profile = await getClanProfileCached(env);
     const members = (profile.members_points || []).map((m) => {
-      const u = m.user || m.member || m;
+      const u = m.user || m.member || m.player || m.profile || m;
       return {
-        id: u.id ?? null,
-        name: u.global_name || u.username || "Unknown",
-        points: Math.round((Number(m.points ?? m.total_points ?? 0) || 0) * 100) / 100,
+        id: u.id ?? m.user_id ?? null,
+        name: u.global_name || u.username || m.global_name || m.username || "Unknown",
+        points: Math.round(extractPoints(m) * 100) / 100,
         country: u.country ?? null,
         youtube: null,
       };
     });
-
+ 
     const missing = members.filter((m) => m.country == null && m.id).slice(0, 30);
     await Promise.all(
       missing.map(async (m) => {
@@ -297,7 +316,7 @@ async function getMembersCached(env) {
         } catch {}
       })
     );
-
+ 
     try {
       const rows = await fetchSheetRows(env, "MEMBERS");
       const yt = new Map(rows.filter((r) => r.player && r.youtube).map((r) => [String(r.player).toLowerCase(), r.youtube]));
@@ -305,15 +324,20 @@ async function getMembersCached(env) {
     } catch (err) {
       console.warn("MEMBERS tab not readable (optional):", String(err));
     }
-
+ 
     return members.sort((a, b) => b.points - a.points).map((m, i) => ({ ...m, rank: i + 1 }));
   });
 }
-
-async function handleMembers(env) {
+ 
+async function handleMembers(env, ctx, request) {
+  // /api/members?debug=1 shows the raw first entry AREDL returns, for diagnosing field names.
+  if (request && new URL(request.url).searchParams.get("debug")) {
+    const profile = await getClanProfileCached(env);
+    return json({ sample: (profile.members_points || []).slice(0, 2), keys: Object.keys(profile) });
+  }
   return json(await getMembersCached(env));
 }
-
+ 
 /* ============================================================
    /api/other — "OTHER" sheet tab. Columns:
    type | player | level | attempts | video (optional)
@@ -333,14 +357,14 @@ async function handleOther(env) {
         videoUrl: r.video || r.link || null,
       }))
       .filter((r) => r.attempts > 0);
-
+ 
     const isHigh = (t) => /high|most|great|max/.test(t);
     const isLow = (t) => /low|few|small|least|min/.test(t);
     const highest = parsed.filter((r) => isHigh(r.type)).sort((a, b) => b.attempts - a.attempts).slice(0, 10);
     const lowest = parsed.filter((r) => isLow(r.type)).sort((a, b) => a.attempts - b.attempts).slice(0, 10);
     return { highest, lowest };
   });
-
+ 
   // Attach flags by matching player names against the members list (best-effort).
   try {
     const members = await getMembersCached(env);
@@ -350,3 +374,4 @@ async function handleOther(env) {
   } catch {}
   return json(data);
 }
+ 
