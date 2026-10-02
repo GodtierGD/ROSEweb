@@ -13,10 +13,14 @@
  *   CACHE               KV namespace       — short-lived cache for AREDL + Sheets responses
  *   AREDL_API_BASE      var                — e.g. "https://api.aredl.net"
  *   AREDL_API_KEY       secret             — set via `wrangler secret put AREDL_API_KEY`
- *   AREDL_CLAN_ID       var                — the clan's id/slug on AREDL, if the API needs it
  *   CLAN_SHEET_ID       var                — the Google Sheet's id (the long string in its URL);
- *                                            backs both the "UNRATED" and "PROGRESS" tabs
+ *                                            backs the "Records", "UNRATED", and "PROGRESS" tabs
  *   VIDEO_FEED_URL      var (optional)     — RSS/JSON feed for the channel's uploads
+ *
+ * The clan isn't something AREDL's API knows about — AREDL just returns the
+ * full public level list. "Which levels did ROSE beat" lives in the sheet's
+ * "Records" tab (Player | Record | Date | Completion) and gets matched
+ * against AREDL's level list by name. See handleList() below.
  */
 
 const JSON_HEADERS = {
@@ -56,38 +60,112 @@ async function cached(env, key, ttlSeconds, loader) {
 }
 
 /* ============================================================
-   /api/list — proxy + cache AREDL, filtered to this clan's beats
+   /api/list — AREDL's full level list, cross-referenced against the
+   clan's own "Records" sheet tab, with every victor on a level kept
+   (not just the first) so the card can show who else beat it too.
    ============================================================ */
-async function handleList(env, ctx) {
-  const data = await cached(env, "list:v1", 300, async () => {
-    // AREDL exposes the full rated list; adjust the path/shape to match
-    // whatever the current AREDL API contract is at deploy time.
-    // Auth scheme assumed as a bearer token — swap this for whatever
-    // AREDL's docs actually specify (custom header, query param, etc.)
-    // if it turns out to be different.
-    const res = await fetch(`${env.AREDL_API_BASE}/api/list`, {
-      headers: { Authorization: `Bearer ${env.AREDL_API_KEY}` },
-    });
-    if (!res.ok) throw new Error(`AREDL list fetch failed: ${res.status}`);
-    const levels = await res.json();
+async function handleList(env) {
+  const data = await cached(env, "list:v2", 300, async () => {
+    const [aredlLevels, records] = await Promise.all([
+      fetchAredlLevels(env),
+      fetchSheetRows(env, "Records"),
+    ]);
 
-    // Keep only levels beaten by a clan member. Adjust the field names
-    // (`clan`, `verifier`, etc.) once you've checked the real response shape.
-    return levels
-      .filter((lvl) => (lvl.records || []).some((r) => r.clanId === env.AREDL_CLAN_ID))
-      .map((lvl) => {
-        const clanRecord = lvl.records.find((r) => r.clanId === env.AREDL_CLAN_ID);
+    // Group the clan's completions by level name, earliest first.
+    const byLevel = {};
+    for (const r of records) {
+      if (!r.record) continue;
+      (byLevel[r.record] ||= []).push(r);
+    }
+    for (const name in byLevel) {
+      byLevel[name].sort((a, b) => parseUKDate(a.date) - parseUKDate(b.date));
+    }
+
+    const matched = [];
+    for (const name in byLevel) {
+      const level = aredlLevels.find((l) => l.name === name);
+      if (!level) {
+        warnUnmatchedLevel(name, aredlLevels, byLevel[name][0]);
+        continue;
+      }
+      const [victor, ...rest] = byLevel[name];
+      matched.push({ level, victor, followingVictors: rest.map((r) => r.player) });
+    }
+
+    // Levels where the sheet has no completion link fall back to AREDL's
+    // own first verification video, fetched per-level (only for the ones
+    // that need it, and only once per cache window — see `cached()` above).
+    const withVideo = await Promise.all(
+      matched.map(async ({ level, victor, followingVictors }) => {
+        let videoUrl = victor.completion || null;
+        if (!videoUrl) {
+          try {
+            const detail = await fetchAredlLevelDetail(env, level.id);
+            videoUrl = detail.verifications?.[0]?.video_url ?? null;
+          } catch (err) {
+            console.warn(`Couldn't fetch fallback video for "${level.name}":`, err.message);
+          }
+        }
         return {
-          rank: lvl.position,
-          name: lvl.name,
-          creator: lvl.creator,
-          verifier: clanRecord.player,
-          points: lvl.points,
-          videoUrl: clanRecord.videoUrl,
+          rank: level.position,
+          id: level.id,
+          name: level.name,
+          creator: level.publisher?.global_name ?? level.creator ?? "Unknown",
+          verifier: victor.player,
+          points: level.points ?? null,
+          videoUrl,
+          followingVictors,
         };
-      });
+      })
+    );
+
+    return withVideo.sort((a, b) => a.rank - b.rank);
   });
   return json(data);
+}
+
+async function fetchAredlLevels(env) {
+  // Confirmed endpoint as of this file's last check — re-verify against
+  // AREDL's docs if this starts 404ing, since public APIs do move.
+  const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/levels`, {
+    headers: { Authorization: `Bearer ${env.AREDL_API_KEY}` },
+  });
+  if (!res.ok) throw new Error(`AREDL list fetch failed: ${res.status}`);
+  return res.json();
+}
+
+async function fetchAredlLevelDetail(env, levelId) {
+  const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/levels/${levelId}`, {
+    headers: { Authorization: `Bearer ${env.AREDL_API_KEY}` },
+  });
+  if (!res.ok) throw new Error(`AREDL level detail fetch failed: ${res.status}`);
+  return res.json();
+}
+
+// Sheet dates are entered as dd/mm/yyyy. Blank or malformed dates sort last
+// rather than crashing the whole list.
+function parseUKDate(dateStr) {
+  if (!dateStr) return new Date(8640000000000000);
+  const [day, month, year] = String(dateStr).split("/").map(Number);
+  if (!day || !month || !year) return new Date(8640000000000000);
+  return new Date(year, month - 1, day);
+}
+
+// A sheet row with a level name that doesn't exactly match any AREDL level
+// (typo, renamed level, etc.) gets dropped from the list rather than
+// crashing it — this logs which one and, if there's an obvious near-match,
+// what it was probably supposed to be. Check `wrangler tail` for these.
+function warnUnmatchedLevel(sheetName, aredlLevels, firstRecord) {
+  const lower = sheetName.toLowerCase();
+  const close = aredlLevels.find((l) => {
+    const a = l.name.toLowerCase();
+    return a.includes(lower) || lower.includes(a);
+  });
+  if (close) {
+    console.warn(`Skipped "${sheetName}" by ${firstRecord.player} — did you mean "${close.name}"?`);
+  } else {
+    console.warn(`Skipped "${sheetName}" by ${firstRecord.player} — no matching AREDL level found.`);
+  }
 }
 
 /* ============================================================

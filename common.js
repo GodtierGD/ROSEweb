@@ -83,8 +83,11 @@ function fallbackGradient(seed) {
 function levelCardHTML(level, index) {
   const tier = tierClass(level.rank);
   const bgStyle = level.bg ? `background-image:url('${level.bg}');background-size:cover;background-position:center;` : `background:${fallbackGradient(index)};`;
+  const following = level.followingVictors && level.followingVictors.length
+    ? `<div class="also">also beaten by ${level.followingVictors.join(", ")}</div>`
+    : "";
   return `
-    <div class="level-card">
+    <div class="level-card" data-card="${index}">
       <div class="bg-layer" style="${bgStyle}"></div>
       <div class="fade-layer"></div>
       <div class="rank ${tier}">#${level.rank}</div>
@@ -92,6 +95,7 @@ function levelCardHTML(level, index) {
       <div class="level-meta">
         <div class="name">${level.name}</div>
         <div class="by">by <b>${level.creator}</b> — beaten by <b>${level.verifier}</b></div>
+        ${following}
       </div>
       <div class="level-side">
         ${level.points ? `<span class="pill points">${level.points} pts</span>` : ""}
@@ -101,11 +105,62 @@ function levelCardHTML(level, index) {
   `;
 }
 
+/* ------------------------------------------------------------
+   YouTube thumbnail fallback — maxresdefault doesn't exist for every
+   upload, so step down through qualities until one actually loads.
+   Runs client-side (needs a real <img> load to tell a real thumbnail
+   apart from YouTube's generic grey placeholder).
+   ------------------------------------------------------------ */
+const THUMB_QUALITIES = ["maxresdefault", "sddefault", "hqdefault", "mqdefault", "default"];
+
+function extractYouTubeId(url) {
+  if (!url) return null;
+  const m = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+function resolveYouTubeThumbnail(videoId) {
+  return new Promise((resolve) => {
+    let i = 0;
+    function tryNext() {
+      if (i >= THUMB_QUALITIES.length) return resolve(null);
+      const url = `https://img.youtube.com/vi/${videoId}/${THUMB_QUALITIES[i]}.jpg`;
+      const img = new Image();
+      img.onload = () => {
+        if (img.naturalWidth > 200) resolve(url);
+        else { i++; tryNext(); }
+      };
+      img.onerror = () => { i++; tryNext(); };
+      img.src = url;
+    }
+    tryNext();
+  });
+}
+
+// Call this after inserting levelCardHTML(...) output into the DOM, passing
+// the same container and level array used to build it. Progressively
+// upgrades each card's blurred placeholder to its real video thumbnail
+// without blocking the initial render.
+function hydrateThumbnails(container, levels) {
+  levels.forEach((level, i) => {
+    const videoId = extractYouTubeId(level.videoUrl);
+    if (!videoId) return;
+    const card = container.querySelector(`[data-card="${i}"] .bg-layer`);
+    if (!card) return;
+    resolveYouTubeThumbnail(videoId).then((url) => {
+      if (!url) return;
+      card.style.backgroundImage = `url('${url}')`;
+      card.style.backgroundSize = "cover";
+      card.style.backgroundPosition = "center";
+    });
+  });
+}
+
 /* ============================================================
    Mock data — replace once /api/* is live
    ============================================================ */
 const MOCK_LIST = [
-  { rank: 1, name: "Bloodbath", creator: "Riot", verifier: "Yaser", points: 500, videoUrl: "#" },
+  { rank: 1, name: "Bloodbath", creator: "Riot", verifier: "Yaser", points: 500, videoUrl: "#", followingVictors: ["Comzy", "Skelezavr"] },
   { rank: 2, name: "Tidal Wave", creator: "OniLinkGD", verifier: "Zoink", points: 486, videoUrl: "#" },
   { rank: 3, name: "Acheron", creator: "Rusty313", verifier: "Skelezavr", points: 471, videoUrl: "#" },
   { rank: 4, name: "Slaughterhouse", creator: "iCedCave", verifier: "Friajir", points: 452, videoUrl: "#" },

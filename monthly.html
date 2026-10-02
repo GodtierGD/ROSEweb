@@ -49,6 +49,7 @@
     mount.innerHTML = rows.length
       ? rows.map((lvl, i) => levelCardHTML(lvl, i)).join("")
       : `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${active}.</div>`;
+    if (rows.length) hydrateThumbnails(mount, rows);
   }
 
   (async () => {

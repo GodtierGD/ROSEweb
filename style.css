@@ -266,6 +266,7 @@ main { padding-bottom: 96px; }
   margin-top: 2px;
 }
 .level-meta .by b { color: var(--text); font-weight: 600; }
+.level-meta .also { font-size: 12px; color: var(--text-faint); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .level-side {
   display: flex;

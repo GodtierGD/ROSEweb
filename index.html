@@ -72,7 +72,9 @@
   (async () => {
     const data = await apiGet("/list", MOCK_LIST);
     const recent = [...data].sort((a, b) => a.rank - b.rank).slice(0, 4);
-    document.getElementById("recent-list").innerHTML = recent.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+    const recentMount = document.getElementById("recent-list");
+    recentMount.innerHTML = recent.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+    hydrateThumbnails(recentMount, recent);
   })();
 </script>
 </body>
