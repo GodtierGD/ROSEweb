@@ -47,13 +47,13 @@ ever starts 404ing, since public APIs do move.
 
 Everything below reads one Google Sheet, each feature from its own tab.
 
-1. Create tabs named exactly (the tab names stay uppercase, the site labels don't):
-   - `UNRATED` columns: `name`, `creator`, `verifier` (or `player`), `note`
-   - `PROGRESS` columns: `player`, `level`, `pct` (0-100), `status` (optional)
-   - `OTHER` columns: `type`, `player`, `level`, `attempts`, `video` (optional).
-     `type` is `High` (most attempts) or `Low` (fewest attempts); the site shows the top 10 of each.
-   - `MEMBERS` (optional) columns: `player`, `youtube` — adds a YouTube button on the Members page.
-     `player` must match the member's AREDL display name.
+1. Tabs and header row (row 1) — header names aren't case-sensitive:
+   - `UNRATED`: `LEVELNAME`, `PLAYERNAME`
+   - `PROGRESS`: `LEVELNAME`, `PLAYERNAME`, `FROMZERO` (progress percent, 0-100; 100 counts as Completed)
+   - `HIGHATT`: `LEVELNAME`, `PLAYERNAME`, `ATTEMPTS` (most attempts — top 10 shown)
+   - `LOWATT`: `LEVELNAME`, `PLAYERNAME`, `ATTEMPTS` (fewest attempts — top 10 shown)
+   - `MEMBERS` (optional): `PLAYERNAME`, `YOUTUBE` — adds a YouTube button on the Members page.
+   - Any other tab (like `Sheet Info`) is ignored.
 2. Share the sheet as **"Anyone with the link can view"**.
 3. Put the sheet id (the part between `/d/` and `/edit` in its URL) in `CLAN_SHEET_ID` in `wrangler.toml`.
 

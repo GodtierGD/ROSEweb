@@ -47,7 +47,7 @@
   </div>
 </main>
 
-<footer class="container"><span id="clan-name-footer"></span> Demonlist — this page reads a Google Sheet tab named "OTHER" via the Worker's <code>/api/other</code> endpoint.</footer>
+<footer class="container"><span id="clan-name-footer"></span> Demonlist — this page reads the Google Sheet tabs "HIGHATT" and "LOWATT" via the Worker's <code>/api/other</code> endpoint.</footer>
 
 <script src="common.js"></script>
 <script>
@@ -65,7 +65,7 @@
           </div>
           <div class="att">${Number(r.attempts).toLocaleString()}${r.videoUrl ? `<a href="${esc(r.videoUrl)}" target="_blank" rel="noopener">▶</a>` : ""}</div>
         </div>`).join("")
-      : `<div class="empty-state"><div class="title">Nothing logged</div>Add rows to the OTHER sheet tab.</div>`;
+      : `<div class="empty-state"><div class="title">Nothing logged</div>Add rows to the HIGHATT / LOWATT sheet tabs.</div>`;
     return `<div class="card"><div class="att-title">${title}</div><div class="att-sub">${sub}</div>${body}</div>`;
   }
 

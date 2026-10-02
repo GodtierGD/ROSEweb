@@ -8,7 +8,7 @@
  *   GET /api/videos            -> channel upload feed (non-YouTube-API), cached
  *   GET /api/unrated           -> rows from the "UNRATED" tab of a public Google Sheet
  *   GET /api/members           -> clan members ranked by AREDL points (+ country, optional YouTube from "MEMBERS" tab)
- *   GET /api/other             -> top-10 highest / lowest attempt counts, from the "OTHER" tab
+ *   GET /api/other             -> top-10 most / fewest attempts, from the "HIGHATT" and "LOWATT" tabs
  *
  * Bindings expected (see wrangler.toml):
  *   CACHE               KV namespace       — short-lived cache for AREDL + Sheets responses
@@ -167,29 +167,32 @@ async function getCreatorLookupCached(env) {
    /api/progress — from the "PROGRESS" tab of the Google Sheet
    ============================================================ */
 async function handleProgress(env) {
-  const rows = await cached(env, "progress:v1", 300, async () => {
+  const rows = await cached(env, "progress:v2", 300, async () => {
     const raw = await fetchSheetRows(env, "PROGRESS");
-    // Expect sheet columns: player | level | pct | status
+    // Sheet columns: LEVELNAME | PLAYERNAME | FROMZERO (progress percent, 0-100)
     return raw
-      .filter((row) => row.player && row.level)
-      .map((row) => ({
-        player: row.player,
-        level: row.level,
-        pct: Number(row.pct) || 0,
-        status: row.status || (Number(row.pct) >= 100 ? "Completed" : "In progress"),
-      }));
+      .map((row) => {
+        const pct = Math.max(0, Math.min(100, parseNum(pick(row, "fromzero", "pct", "progress", "percent"))));
+        return {
+          player: pick(row, "playername", "player"),
+          level: pick(row, "levelname", "level"),
+          pct,
+          status: pick(row, "status") || (pct >= 100 ? "Completed" : "In progress"),
+        };
+      })
+      .filter((row) => row.player && row.level);
   });
- 
+
   const byPlayer = {};
   for (const row of rows) {
     byPlayer[row.player] = byPlayer[row.player] || { player: row.player, entries: [] };
     byPlayer[row.player].entries.push({ level: row.level, pct: row.pct, status: row.status });
   }
-  // Highest progress first within each player, matching the old D1 ordering.
+  // Highest progress first within each player.
   Object.values(byPlayer).forEach((p) => p.entries.sort((a, b) => b.pct - a.pct));
   return json(Object.values(byPlayer));
 }
- 
+
 /* ============================================================
    /api/videos — non-YouTube-API feed, cached aggressively
    ============================================================ */
@@ -227,46 +230,67 @@ function parseVideoFeed(xml) {
 async function fetchSheetRows(env, tabName) {
   const sheetUrl =
     `https://docs.google.com/spreadsheets/d/${env.CLAN_SHEET_ID || env.UNRATED_SHEET_ID}` +
-    `/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tabName)}`;
- 
+    `/gviz/tq?tqx=out:json&headers=1&sheet=${encodeURIComponent(tabName)}`;
+
   const res = await fetch(sheetUrl);
   if (!res.ok) throw new Error(`Sheets fetch failed for tab "${tabName}": ${res.status}`);
   const text = await res.text();
- 
+
   // Response is wrapped: google.visualization.Query.setResponse({...});
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   const payload = JSON.parse(text.slice(start, end + 1));
- 
-  const cols = payload.table.cols.map((c, i) => (c.label || `col${i}`).trim().toLowerCase());
-  return payload.table.rows.map((r) => {
+
+  // Header names are normalised: "LEVELNAME", "Level Name" and "level_name" all become "levelname".
+  const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  let cols = payload.table.cols.map((c, i) => norm(c.label) || `col${i}`);
+  let rows = payload.table.rows;
+
+  // Google sometimes fails to detect the header row when every column is text;
+  // in that case the headers arrive as the first data row.
+  if (payload.table.cols.every((c) => !c.label) && rows.length) {
+    cols = rows[0].c.map((cell, i) => norm(cell && (cell.f ?? cell.v)) || `col${i}`);
+    rows = rows.slice(1);
+  }
+
+  return rows.map((r) => {
     const row = {};
-    r.c.forEach((cell, i) => {
+    (r.c || []).forEach((cell, i) => {
       row[cols[i]] = cell ? (cell.f ?? cell.v) : "";
     });
     return row;
   });
 }
- 
+
+// First non-empty value among several possible column names.
+function pick(row, ...keys) {
+  for (const k of keys) if (row[k] !== undefined && row[k] !== "" && row[k] !== null) return row[k];
+  return "";
+}
+
+// "12,345" / "45%" / 45 -> number
+function parseNum(v) {
+  const n = Number(String(v ?? "").replace(/[^\d.\-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
 /* ============================================================
    /api/unrated — reads the "UNRATED" tab of the Google Sheet
    ============================================================ */
 async function handleUnrated(env) {
-  const data = await cached(env, "unrated:v1", 300, async () => {
+  const data = await cached(env, "unrated:v2", 300, async () => {
     const rows = await fetchSheetRows(env, "UNRATED");
-    // Expect sheet columns: name | creator | verifier | note
+    // Sheet columns: LEVELNAME | PLAYERNAME
     return rows
-      .filter((row) => row.name)
       .map((row) => ({
-        name: row.name,
-        creator: row.creator || "Unknown",
-        verifier: row.verifier || row.player || "Unknown",
-        note: row.note || "",
-      }));
+        name: pick(row, "levelname", "name", "level"),
+        verifier: pick(row, "playername", "player", "verifier") || "Unknown",
+      }))
+      .filter((row) => row.name);
   });
   return json(data);
 }
- 
+
 /* ============================================================
    /api/members — clan leaderboard by AREDL points.
    Points come from the clan endpoint's `members_points`. Country is read
@@ -292,9 +316,9 @@ function extractPoints(entry) {
   }
   return 0;
 }
- 
+
 async function getMembersCached(env) {
-  return cached(env, "members:v2", 600, async () => {
+  return cached(env, "members:v3", 600, async () => {
     const profile = await getClanProfileCached(env);
     const members = (profile.members_points || []).map((m) => {
       const u = m.user || m.member || m.player || m.profile || m;
@@ -306,7 +330,7 @@ async function getMembersCached(env) {
         youtube: null,
       };
     });
- 
+
     const missing = members.filter((m) => m.country == null && m.id).slice(0, 30);
     await Promise.all(
       missing.map(async (m) => {
@@ -316,19 +340,24 @@ async function getMembersCached(env) {
         } catch {}
       })
     );
- 
+
     try {
       const rows = await fetchSheetRows(env, "MEMBERS");
-      const yt = new Map(rows.filter((r) => r.player && r.youtube).map((r) => [String(r.player).toLowerCase(), r.youtube]));
+      const yt = new Map(
+        rows
+          .map((r) => [pick(r, "playername", "player"), pick(r, "youtube", "channel", "link")])
+          .filter(([p, y]) => p && y)
+          .map(([p, y]) => [String(p).toLowerCase(), y])
+      );
       for (const m of members) m.youtube = yt.get(m.name.toLowerCase()) ?? null;
     } catch (err) {
       console.warn("MEMBERS tab not readable (optional):", String(err));
     }
- 
+
     return members.sort((a, b) => b.points - a.points).map((m, i) => ({ ...m, rank: i + 1 }));
   });
 }
- 
+
 async function handleMembers(env, ctx, request) {
   // /api/members?debug=1 shows the raw first entry AREDL returns, for diagnosing field names.
   if (request && new URL(request.url).searchParams.get("debug")) {
@@ -337,34 +366,33 @@ async function handleMembers(env, ctx, request) {
   }
   return json(await getMembersCached(env));
 }
- 
+
 /* ============================================================
-   /api/other — "OTHER" sheet tab. Columns:
-   type | player | level | attempts | video (optional)
-   `type` is High/Highest/Most/Greatest or Low/Lowest/Fewest/Smallest.
-   Returns { highest: [...top 10], lowest: [...top 10] }.
+   /api/other — "HIGHATT" and "LOWATT" sheet tabs, each:
+   LEVELNAME | PLAYERNAME | ATTEMPTS
+   Returns { highest: [...top 10 most attempts], lowest: [...top 10 fewest] }.
    ============================================================ */
+async function readAttempts(env, tab) {
+  const rows = await fetchSheetRows(env, tab);
+  return rows
+    .map((r) => ({
+      level: pick(r, "levelname", "level"),
+      player: pick(r, "playername", "player"),
+      attempts: parseNum(pick(r, "attempts", "att")),
+      videoUrl: pick(r, "video", "link") || null,
+    }))
+    .filter((r) => r.level && r.player && r.attempts > 0);
+}
+
 async function handleOther(env) {
-  const data = await cached(env, "other:v1", 300, async () => {
-    const rows = await fetchSheetRows(env, "OTHER");
-    const parsed = rows
-      .filter((r) => r.player && r.level)
-      .map((r) => ({
-        type: String(r.type || "").toLowerCase(),
-        player: r.player,
-        level: r.level,
-        attempts: Number(String(r.attempts ?? "").replace(/[^\d.]/g, "")) || 0,
-        videoUrl: r.video || r.link || null,
-      }))
-      .filter((r) => r.attempts > 0);
- 
-    const isHigh = (t) => /high|most|great|max/.test(t);
-    const isLow = (t) => /low|few|small|least|min/.test(t);
-    const highest = parsed.filter((r) => isHigh(r.type)).sort((a, b) => b.attempts - a.attempts).slice(0, 10);
-    const lowest = parsed.filter((r) => isLow(r.type)).sort((a, b) => a.attempts - b.attempts).slice(0, 10);
-    return { highest, lowest };
+  const data = await cached(env, "other:v2", 300, async () => {
+    const [high, low] = await Promise.all([readAttempts(env, "HIGHATT"), readAttempts(env, "LOWATT")]);
+    return {
+      highest: high.sort((a, b) => b.attempts - a.attempts).slice(0, 10),
+      lowest: low.sort((a, b) => a.attempts - b.attempts).slice(0, 10),
+    };
   });
- 
+
   // Attach flags by matching player names against the members list (best-effort).
   try {
     const members = await getMembersCached(env);
@@ -374,4 +402,3 @@ async function handleOther(env) {
   } catch {}
   return json(data);
 }
- 

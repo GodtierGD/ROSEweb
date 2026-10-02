@@ -52,8 +52,8 @@
       <div class="unrated-row">
         <span class="pill pending">Pending</span>
         <div style="flex:1;min-width:0;">
-          <div class="name">${row.name}</div>
-          <div class="by">by <b>${row.creator}</b> — beaten by <b>${row.verifier}</b></div>
+          <div class="name">${esc(row.name)}</div>
+          <div class="by"><b>${esc(row.verifier)}</b></div>
         </div>
         <div class="note">${row.note || ""}</div>
       </div>
