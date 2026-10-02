@@ -3,7 +3,7 @@ main = "worker.js"
 compatibility_date = "2026-09-23"
 
 [vars]
-AREDL_API_BASE = "https://api.aredl.net/v2/api"
+AREDL_API_BASE = "https://api.aredl.net"
 AREDL_CLAN_ID = "f362d293-cb04-40e9-b86d-5ef2001a596c"
 UNRATED_SHEET_ID = "1jYtaUjjpRIWitMcte8XPcKtLTKcx1ZsM4J2wswqQNJE"
 VIDEO_FEED_URL = "" # e.g. a YouTube channel's public RSS feed URL
@@ -17,10 +17,9 @@ database_id = "5dcaf0a1-2c8a-4488-a79d-5b1176c2f50a"
 binding = "CACHE"
 id = "dc51253cc0ea4e559b6b76acc2765349"
 
-# Serve the static pages from the same Worker, or deploy them separately
-# to Cloudflare Pages and point CONFIG.apiBase (in common.js) at this
-# Worker's URL instead. If serving together, exclude the non-frontend
-# files so they aren't published as static assets:
-# [assets]
-# directory = "."
-# exclude = ["worker.js", "wrangler.toml", "0001_initial.sql", "README.md"]
+# Serves index.html, style.css, common.js etc. straight from this same
+# Worker. Static assets are matched first; anything that isn't a static
+# file (like /api/*) falls through to the fetch handler in worker.js.
+# Non-frontend files are excluded via .assetsignore in the repo root.
+[assets]
+directory = "."
