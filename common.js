@@ -100,7 +100,7 @@ function levelCardHTML(level, index) {
   const tier = tierClass(level.rank);
   const bgStyle = level.bg ? `background-image:url('${level.bg}');background-size:cover;background-position:center;` : `background:${fallbackGradient(index)};`;
   const following = level.followingVictors && level.followingVictors.length
-    ? `<div class="also">also beaten by ${level.followingVictors.join(", ")}</div>`
+    ? `<div class="also">also beaten by ${esc(level.followingVictors.join(", "))}</div>`
     : "";
   return `
     <div class="level-card" data-card="${index}">
@@ -109,13 +109,13 @@ function levelCardHTML(level, index) {
       <div class="rank ${tier}">#${level.rank}</div>
       <div class="divider"></div>
       <div class="level-meta">
-        <div class="name">${level.name}</div>
-        <div class="by"><b>${level.verifier}</b>${flagHTML(level.verifierCountry)}</div>
+        <div class="name">${esc(level.name)}</div>
+        <div class="by"><b>${esc(level.verifier)}</b>${flagHTML(level.verifierCountry)}</div>
         ${following}
       </div>
       <div class="level-side">
         ${level.points ? `<span class="pill points">${level.points} pts</span>` : ""}
-        ${level.videoUrl ? `<a class="watch-link" href="${level.videoUrl}" target="_blank" rel="noopener"><span>Watch</span> ▶</a>` : ""}
+        ${level.videoUrl ? `<a class="watch-link" href="${esc(level.videoUrl)}" target="_blank" rel="noopener"><span>Watch</span> ▶</a>` : ""}
       </div>
     </div>
   `;

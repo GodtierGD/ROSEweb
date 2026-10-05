@@ -53,15 +53,15 @@
   function playerBlockHTML(p) {
     const rows = p.entries.map(e => `
       <div class="prog-row">
-        <div class="lvl">${e.level}</div>
+        <div class="lvl">${esc(e.level)}</div>
         <div class="prog-track"><div class="prog-fill" style="width:${e.pct}%;"></div></div>
         <div class="pct">${e.pct}%</div>
-        <div class="status">${e.status}</div>
+        <div class="status">${esc(e.status)}</div>
       </div>
     `).join("");
     return `
       <div class="player-block card">
-        <div class="head"><span class="name">${p.player}</span></div>
+        <div class="head"><span class="name">${esc(p.player)}</span></div>
         ${rows}
       </div>
     `;

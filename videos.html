@@ -52,11 +52,11 @@
 
   function videoCardHTML(v) {
     return `
-      <a class="video-card" href="${v.url}" target="_blank" rel="noopener">
-        <div class="video-thumb">${v.thumb ? `<img src="${v.thumb}" alt="">` : "▶ Preview"}</div>
+      <a class="video-card" href="${esc(v.url)}" target="_blank" rel="noopener">
+        <div class="video-thumb">${v.thumb ? `<img src="${esc(v.thumb)}" alt="">` : "▶ Preview"}</div>
         <div class="video-body">
-          <div class="title">${v.title}</div>
-          <div class="meta">${v.channel} — ${new Date(v.published).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}</div>
+          <div class="title">${esc(v.title)}</div>
+          <div class="meta">${esc(v.channel)} — ${new Date(v.published).toLocaleDateString(undefined,{year:"numeric",month:"short",day:"numeric"})}</div>
         </div>
       </a>
     `;
