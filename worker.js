@@ -228,10 +228,30 @@ async function getClanCompletionsCached(env) {
 /* ============================================================
    /api/progress — from the "PROGRESS" tab of the Google Sheet
    ============================================================ */
+// "40-85, 60-100" -> [{start:40,end:85}, {start:60,end:100}]. Each gets a
+// `kind` so the frontend can prioritize overlaps: a run reaching 100% is a
+// "finish" (proven they can close it out from that point), anything else is
+// a plain practice "run". The 0->FROMZERO range is handled separately and
+// always wins over both when drawing overlaps.
+function parseRuns(raw) {
+  if (!raw) return [];
+  return String(raw)
+    .split(",")
+    .map((chunk) => {
+      const m = chunk.trim().match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)/);
+      if (!m) return null;
+      const start = Math.max(0, Math.min(100, Number(m[1])));
+      const end = Math.max(0, Math.min(100, Number(m[2])));
+      if (end <= start) return null;
+      return { start, end, kind: end >= 100 ? "finish" : "run" };
+    })
+    .filter(Boolean);
+}
+
 async function handleProgress(env) {
-  const rows = await cached(env, "progress:v2", 300, async () => {
+  const rows = await cached(env, "progress:v3", 300, async () => {
     const raw = await fetchSheetRows(env, "PROGRESS");
-    // Sheet columns: LEVELNAME | PLAYERNAME | FROMZERO (progress percent, 0-100)
+    // Sheet columns: LEVELNAME | PLAYERNAME | FROMZERO (percent, 0-100) | RUNS (optional, "40-85, 60-100")
     return raw
       .map((row) => {
         const pct = Math.max(0, Math.min(100, parseNum(pick(row, "fromzero", "pct", "progress", "percent"))));
@@ -240,6 +260,7 @@ async function handleProgress(env) {
           level: pick(row, "levelname", "level"),
           pct,
           status: pick(row, "status") || (pct >= 100 ? "Completed" : "In progress"),
+          runs: parseRuns(pick(row, "runs")),
         };
       })
       .filter((row) => row.player && row.level);
@@ -248,7 +269,7 @@ async function handleProgress(env) {
   const byPlayer = {};
   for (const row of rows) {
     byPlayer[row.player] = byPlayer[row.player] || { player: row.player, entries: [] };
-    byPlayer[row.player].entries.push({ level: row.level, pct: row.pct, status: row.status });
+    byPlayer[row.player].entries.push({ level: row.level, pct: row.pct, status: row.status, runs: row.runs });
   }
   // Highest progress first within each player.
   Object.values(byPlayer).forEach((p) => p.entries.sort((a, b) => b.pct - a.pct));

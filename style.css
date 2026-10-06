@@ -16,6 +16,7 @@
   --accent: #ff3b52;       /* crimson — top-tier / primary */
   --accent-soft: #ff3b5222;
   --accent-2: #ffb136;     /* amber — points */
+  --accent-green: #2ecc71; /* green — "from zero" progress */
   --accent-3: #7c6cff;     /* violet — mid tier */
   --accent-cool: #3fb6ff;  /* cyan — low tier / info */
   --pending: #8a8390;      /* grey — unrated / pending */

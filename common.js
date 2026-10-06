@@ -240,17 +240,23 @@ const MOCK_PROGRESS = [
   {
     player: "Skelezavr",
     entries: [
-      { level: "Acheron", pct: 100, status: "Completed" },
-      { level: "Avernus", pct: 87, status: "In progress" },
-      { level: "Kyouki", pct: 64, status: "In progress" },
+      { level: "Acheron", pct: 100, status: "Completed", runs: [] },
+      { level: "Avernus", pct: 87, status: "In progress", runs: [{ start: 60, end: 95, kind: "run" }] },
+      { level: "Kyouki", pct: 62, status: "In progress", runs: [{ start: 85, end: 100, kind: "finish" }] },
+    ],
+  },
+  {
+    player: "Sterling",
+    entries: [
+      { level: "Zodiac", pct: 0, status: "In progress", runs: [{ start: 40, end: 75, kind: "run" }, { start: 90, end: 100, kind: "finish" }] },
     ],
   },
   {
     player: "Comzy",
     entries: [
-      { level: "Kyouki", pct: 100, status: "Completed" },
-      { level: "Firework", pct: 100, status: "Completed" },
-      { level: "Silent Clubstep", pct: 41, status: "In progress" },
+      { level: "Kyouki", pct: 100, status: "Completed", runs: [] },
+      { level: "Firework", pct: 100, status: "Completed", runs: [] },
+      { level: "Silent Clubstep", pct: 41, status: "In progress", runs: [] },
     ],
   },
 ];

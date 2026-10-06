@@ -16,13 +16,31 @@
   .player-block { margin-bottom: 30px; }
   .player-block .head { display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
   .player-block .head .name { font-family:var(--font-display); font-weight:700; font-size:20px; font-style:italic; }
-  .prog-row { display:flex; align-items:center; gap:14px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .prog-row { display:flex; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid var(--border); }
   .prog-row:last-child { border-bottom:none; }
   .prog-row .lvl { width:170px; flex-shrink:0; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .prog-track { flex:1; height:10px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
-  .prog-fill { height:100%; border-radius:999px; background:linear-gradient(90deg, var(--accent-3), var(--accent)); }
-  .prog-row .pct { width:46px; text-align:right; font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--text-muted); }
-  .prog-row .status { width:110px; text-align:right; font-size:12px; color:var(--text-faint); }
+  /* Track holds every segment absolutely positioned by percent, so FROMZERO,
+     a "finish" run (reaches 100%), and plain practice runs can all overlap
+     on the same bar. Stacking order below = visual priority on overlap. */
+  .prog-track { position:relative; flex:1; height:22px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  .prog-seg {
+    position:absolute; top:0; bottom:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-display); font-weight:700; font-size:11px; color:#0b0a0e;
+    white-space:nowrap; overflow:hidden;
+  }
+  .prog-seg.run    { z-index:1; background:linear-gradient(90deg, var(--accent-3), var(--accent)); color:#fff; }
+  .prog-seg.finish { z-index:2; background:var(--accent-2); }
+  .prog-seg.zero   { z-index:3; background:var(--accent-green); border-radius:999px 0 0 999px; }
+  /* For a segment too narrow to hold its own label legibly, the label is
+     drawn just outside its right edge instead of centered inside it. */
+  .prog-seg-label.outside {
+    position:absolute; top:0; bottom:0; z-index:4;
+    display:flex; align-items:center;
+    font-family:var(--font-display); font-weight:700; font-size:11px; color:var(--text-muted);
+    white-space:nowrap;
+  }
+  .prog-row .status { width:110px; text-align:right; font-size:12px; color:var(--text-faint); flex-shrink:0; }
 </style>
 </head>
 <body>
@@ -50,12 +68,39 @@
   renderNav("progress.html");
   document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
 
+  // Draws one colored range on the track. Segments narrower than ~10% can't
+  // fit their own label without clipping it, so the label is placed just
+  // outside the segment's right edge instead of centered inside it.
+  function segmentHTML(start, end, cls, label) {
+    const left = Math.max(0, Math.min(100, start));
+    const width = Math.max(0.3, Math.min(100, end) - left);
+    const seg = `<div class="prog-seg ${cls}" style="left:${left}%;width:${width}%;">${width >= 10 ? esc(label) : ""}</div>`;
+    const outsideLabel = width < 10
+      ? `<div class="prog-seg-label outside" style="left:calc(${Math.min(left + width, 100)}% + 6px);">${esc(label)}</div>`
+      : "";
+    return seg + outsideLabel;
+  }
+
+  // Stacking order (by CSS z-index, .prog-seg.{run,finish,zero}): plain
+  // practice runs sit lowest, a run that reaches 100% ("finish") sits above
+  // those, and the FROMZERO range always sits on top of everything — so
+  // where ranges overlap, zero wins over finish, and finish wins over a
+  // plain run, matching the priority the clan asked for.
+  function trackHTML(e) {
+    const runs = e.runs || [];
+    const segs = [
+      ...runs.filter(r => r.kind === "run").map(r => segmentHTML(r.start, r.end, "run", `${r.start}–${r.end}%`)),
+      ...runs.filter(r => r.kind === "finish").map(r => segmentHTML(r.start, 100, "finish", `${r.start}–100%`)),
+      segmentHTML(0, e.pct, "zero", `${e.pct}%`),
+    ];
+    return `<div class="prog-track">${segs.join("")}</div>`;
+  }
+
   function playerBlockHTML(p) {
     const rows = p.entries.map(e => `
       <div class="prog-row">
         <div class="lvl">${esc(e.level)}</div>
-        <div class="prog-track"><div class="prog-fill" style="width:${e.pct}%;"></div></div>
-        <div class="pct">${e.pct}%</div>
+        ${trackHTML(e)}
         <div class="status">${esc(e.status)}</div>
       </div>
     `).join("");
