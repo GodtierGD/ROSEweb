@@ -30,9 +30,9 @@
       <input id="search" type="text" placeholder="Search level or player…"
         style="flex:1;min-width:220px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
       <select id="sort" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
-        <option value="rank">Sort: Rank</option>
-        <option value="points">Sort: Points</option>
-        <option value="name">Sort: Name</option>
+        <option value="internal">Sort: Internal Ranking</option>
+        <option value="aredl">Sort: AREDL Ranking</option>
+        <option value="name">Sort: Level Name</option>
       </select>
     </div>
 
@@ -53,6 +53,15 @@
 
   let allLevels = [];
 
+  // Internal rank is ROSE's own sequential numbering (#1 = hardest level the
+  // clan has beaten, #2 = next hardest, ...), distinct from a level's real
+  // AREDL placement, which can have gaps (the clan's hardest beat might be
+  // global AREDL #19, not #1). Computed once from the full hardest-to-easiest
+  // order so it stays stable regardless of search or the current sort.
+  function assignInternalRanks(levels) {
+    [...levels].sort((a, b) => a.rank - b.rank).forEach((lvl, i) => { lvl.internalRank = i + 1; });
+  }
+
   function draw() {
     const q = document.getElementById("search").value.trim().toLowerCase();
     const sort = document.getElementById("sort").value;
@@ -61,21 +70,26 @@
       !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q)
     );
 
-    if (sort === "rank") rows.sort((a, b) => a.rank - b.rank);
-    if (sort === "points") rows.sort((a, b) => b.points - a.points);
+    // Internal and AREDL modes share the same underlying order (hardest to
+    // easiest by AREDL placement) — they only differ in which number ends up
+    // on the badge. Name mode sorts alphabetically but still shows the
+    // stable internal rank, so the number stays meaningful either way.
     if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
+    else rows.sort((a, b) => a.rank - b.rank);
 
     const mount = document.getElementById("list-mount");
     if (!rows.length) {
       mount.innerHTML = `<div class="empty-state"><div class="title">No levels match</div>Try a different search term.</div>`;
       return;
     }
-    mount.innerHTML = rows.map((lvl, i) => levelCardHTML(lvl, i)).join("");
-    hydrateThumbnails(mount, rows);
+    const display = rows.map(lvl => ({ ...lvl, rank: sort === "aredl" ? lvl.rank : lvl.internalRank }));
+    mount.innerHTML = display.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+    hydrateThumbnails(mount, display);
   }
 
   (async () => {
     allLevels = await apiGet("/list", MOCK_LIST);
+    assignInternalRanks(allLevels);
     draw();
     document.getElementById("search").addEventListener("input", draw);
     document.getElementById("sort").addEventListener("change", draw);
