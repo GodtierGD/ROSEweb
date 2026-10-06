@@ -14,24 +14,44 @@ const CONFIG = {
 
 const NAV_ITEMS = [
   { href: "index.html", label: "Home" },
-  { href: "list.html", label: "List" },
-  { href: "monthly.html", label: "Monthly" },
+  {
+    label: "List",
+    group: [
+      { href: "list.html", label: "List" },
+      { href: "monthly.html", label: "Monthly" },
+      { href: "unrated.html", label: "Unrated", unrated: true },
+      { href: "other.html", label: "Other" },
+    ],
+  },
   { href: "members.html", label: "Members" },
-  { href: "videos.html", label: "Videos" },
-  { href: "unrated.html", label: "Unrated", unrated: true },
   { href: "progress.html", label: "Progress" },
-  { href: "other.html", label: "Other" },
+  { href: "videos.html", label: "Videos" },
 ];
 
 function renderNav(activeHref) {
   const mount = document.getElementById("site-nav");
   if (!mount) return;
+
+  const linkCls = (item) =>
+    ["", item.unrated ? "tab-unrated" : "", item.href === activeHref ? "active" : ""].filter(Boolean).join(" ").trim();
+
   const tabs = NAV_ITEMS.map((item) => {
-    const cls = ["", item.unrated ? "tab-unrated" : "", item.href === activeHref ? "active" : ""]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
-    return `<a href="${item.href}" class="${cls}">${item.label}</a>`;
+    if (!item.group) return `<a href="${item.href}" class="${linkCls(item)}">${item.label}</a>`;
+
+    const groupActive = item.group.some((g) => g.href === activeHref);
+    const items = item.group
+      .map((g) => {
+        const cls = ["nav-dropdown-item", g.unrated ? "tab-unrated" : "", g.href === activeHref ? "active" : ""]
+          .filter(Boolean).join(" ").trim();
+        return `<a href="${g.href}" class="${cls}">${g.label}</a>`;
+      })
+      .join("");
+    return `
+      <div class="nav-dropdown${groupActive ? " active" : ""}">
+        <button type="button" class="nav-dropdown-trigger">${item.label} <span class="nav-caret">&#9662;</span></button>
+        <div class="nav-dropdown-menu">${items}</div>
+      </div>
+    `;
   }).join("");
 
   mount.innerHTML = `
@@ -47,6 +67,19 @@ function renderNav(activeHref) {
   const toggle = document.getElementById("nav-toggle");
   const tabsEl = document.getElementById("nav-tabs");
   toggle?.addEventListener("click", () => tabsEl.classList.toggle("open"));
+
+  // Dropdown: click the trigger to open/close; clicking elsewhere closes it.
+  mount.querySelectorAll(".nav-dropdown").forEach((dd) => {
+    dd.querySelector(".nav-dropdown-trigger").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const wasOpen = dd.classList.contains("open");
+      mount.querySelectorAll(".nav-dropdown.open").forEach((o) => o.classList.remove("open"));
+      if (!wasOpen) dd.classList.add("open");
+    });
+  });
+  document.addEventListener("click", () => {
+    mount.querySelectorAll(".nav-dropdown.open").forEach((o) => o.classList.remove("open"));
+  });
 }
 
 /* ------------------------------------------------------------
