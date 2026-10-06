@@ -26,7 +26,7 @@
 
 <main>
   <div class="container">
-    <div id="month-tabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div>
+    <select id="month-select" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;margin-bottom:20px;"></select>
     <div id="month-mount">
       <div class="skel" style="height:104px;margin-bottom:12px;"></div>
       <div class="skel" style="height:104px;margin-bottom:12px;opacity:.6;"></div>
@@ -41,28 +41,34 @@
   renderNav("monthly.html");
   document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
 
-  function renderMonth(months, active) {
-    const tabsEl = document.getElementById("month-tabs");
+  function thisMonthLabel() {
+    return new Date().toLocaleString("en-US", { month: "long", year: "numeric" });
+  }
+
+  function renderPicker(months, active) {
+    const sel = document.getElementById("month-select");
+    // Newest first. If the current calendar month has no completions yet,
+    // it still gets its own option (at the top) so it can be the default.
     const keys = Object.keys(months);
-    tabsEl.innerHTML = keys.map(k => `
-      <button data-month="${k}" class="watch-link" style="${k === active ? 'border-color:var(--accent);' : ''}">${k}</button>
-    `).join("");
-    tabsEl.querySelectorAll("button").forEach(btn => {
-      btn.addEventListener("click", () => renderMonth(months, btn.dataset.month));
-    });
+    if (!keys.includes(active)) keys.unshift(active);
+    sel.innerHTML = keys.map(k => `<option value="${esc(k)}" ${k === active ? "selected" : ""}>${esc(k)}</option>`).join("");
+    sel.onchange = () => renderMonth(months, sel.value);
+  }
+
+  function renderMonth(months, active) {
+    renderPicker(months, active);
 
     const rows = [...(months[active] || [])].sort((a, b) => a.rank - b.rank);
     const mount = document.getElementById("month-mount");
     mount.innerHTML = rows.length
       ? rows.map((lvl, i) => levelCardHTML(lvl, i)).join("")
-      : `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${active}.</div>`;
+      : `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${esc(active)}.</div>`;
     if (rows.length) hydrateThumbnails(mount, rows);
   }
 
   (async () => {
     const months = await apiGet("/monthly", MOCK_MONTHLY);
-    const first = Object.keys(months)[0];
-    renderMonth(months, first);
+    renderMonth(months, thisMonthLabel());
   })();
 </script>
 </body>
