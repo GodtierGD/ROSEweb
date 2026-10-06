@@ -166,14 +166,41 @@ function loadImageOk(url, minWidth = 1) {
   });
 }
 
+// AREDL's own official thumbnail repo (All-Rated-Extreme-Demon-List/Thumbnails
+// on GitHub) — auto-updated, has a "cards" crop built for exactly this use
+// case. Served through jsDelivr rather than raw.githubusercontent.com, since
+// raw.githubusercontent rate-limits/blocks hotlinking and jsDelivr is the
+// standard CDN front for GitHub-hosted assets. The exact filename scheme
+// (AREDL's internal level uuid vs the in-game numeric id, .webp vs .png)
+// isn't confirmed, so every plausible combination is tried in order — each
+// failure just falls through silently to the next candidate, ending at the
+// community thumbnail service and then the completion video's own thumbnail.
+function aredlThumbnailCandidates(level) {
+  const base = "https://cdn.jsdelivr.net/gh/All-Rated-Extreme-Demon-List/Thumbnails@main/levels/cards/";
+  const ids = [level.id, level.levelId].filter(Boolean);
+  const exts = ["webp", "png"];
+  const urls = [];
+  for (const id of ids) for (const ext of exts) urls.push(`${base}${id}.${ext}`);
+  return urls;
+}
+
+async function firstWorkingImage(urls) {
+  for (const url of urls) {
+    const ok = await loadImageOk(url);
+    if (ok) return ok;
+  }
+  return null;
+}
+
 function hydrateThumbnails(container, levels) {
   levels.forEach(async (level, i) => {
     const card = container.querySelector(`[data-card="${i}"] .bg-layer`);
     if (!card) return;
-    let url = null;
-    // 1) the level's own in-game thumbnail (community thumbnail service)
-    if (level.levelId) url = await loadImageOk(`https://levelthumbs.prevter.me/thumbnail/${level.levelId}/small`);
-    // 2) fall back to the completion video's YouTube thumbnail
+    // 1) AREDL's own official thumbnail repo (best quality, most "official")
+    let url = await firstWorkingImage(aredlThumbnailCandidates(level));
+    // 2) the level's own in-game thumbnail (community thumbnail service)
+    if (!url && level.levelId) url = await loadImageOk(`https://levelthumbs.prevter.me/thumbnail/${level.levelId}/small`);
+    // 3) fall back to the completion video's YouTube thumbnail
     if (!url) {
       const videoId = extractYouTubeId(level.videoUrl);
       if (videoId) url = await resolveYouTubeThumbnail(videoId);
