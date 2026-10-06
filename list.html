@@ -66,8 +66,12 @@
     const q = document.getElementById("search").value.trim().toLowerCase();
     const sort = document.getElementById("sort").value;
 
+    // Matches a player on either side: the level's listed verifier, or
+    // anyone in followingVictors (every other clan member who's also
+    // beaten it) — so searching a name surfaces every completion of theirs.
     let rows = allLevels.filter(l =>
       !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q)
+      || (l.followingVictors || []).some(v => v.toLowerCase().includes(q))
     );
 
     // Internal and AREDL modes share the same underlying order (hardest to

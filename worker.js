@@ -2,12 +2,12 @@
  * ROSE Demonlist — Cloudflare Worker API
  *
  * Routes:
- *   GET /api/list              -> clan's AREDL records, straight from AREDL (cached)
- *   GET /api/monthly           -> the same records, grouped by achieved_at month
+ *   GET /api/list              -> every main-list level ROSE has beaten, any member (cached)
+ *   GET /api/monthly           -> the same, grouped by achieved_at month
  *   GET /api/progress          -> per-player progress, from the "PROGRESS" tab of a Google Sheet
  *   GET /api/videos            -> channel upload feed (non-YouTube-API), cached
  *   GET /api/unrated           -> rows from the "UNRATED" tab of a public Google Sheet
- *   GET /api/members           -> clan members ranked by AREDL points (+ country, optional YouTube from "MEMBERS" tab)
+ *   GET /api/members           -> clan members ranked by summed real AREDL points (+ country, optional YouTube from "MEMBERS" tab)
  *   GET /api/other             -> top-10 most / fewest attempts, from the "HIGHATT" and "LOWATT" tabs
  *
  * Bindings expected (see wrangler.toml):
@@ -15,29 +15,47 @@
  *   AREDL_API_BASE      var                — e.g. "https://api.aredl.net"
  *   AREDL_CLAN_ID       var                — ROSE's clan UUID on AREDL
  *   CLAN_SHEET_ID       var                — the Google Sheet's id (the long string in its URL);
- *                                            backs the "UNRATED" and "PROGRESS" tabs
+ *                                            backs the "UNRATED", "PROGRESS", "MEMBERS", "HIGHATT", "LOWATT" tabs
  *   VIDEO_FEED_URL      var (optional)     — RSS/JSON feed for the channel's uploads
  *
- * /api/list and /api/monthly both come from one AREDL endpoint:
- * GET /v2/api/aredl/clan/{AREDL_CLAN_ID} — no auth required. It returns the
- * clan's first victor/verifier per level (with achieved_at, video_url,
- * level position/points), plus members_points. It does NOT include every
- * clan member who's beaten a level, only the first — so there's no
- * "followingVictors" data available from this endpoint; that field is
- * simply omitted from /api/list for now. D1 and the sheet's old "Records"
- * tab are no longer used anywhere in this file.
+ * -------------------------------------------------------------------------
+ * How completions are built (the important bit):
+ * AREDL's `clan` endpoint only ever returns the FIRST clan member to beat
+ * each level — it can't tell us who else beat it, and it reports clan
+ * points as a pre-split "contribution" (level points / how many clan
+ * members beat it), not a straight sum. Neither of those is good enough for
+ * showing a player's full completion history or for summing real points.
+ *
+ * So instead, getClanCompletionsCached() below walks every clan member's own
+ * AREDL profile (`/v2/api/aredl/profile/{id}`), which lists everything THEY
+ * personally beat, and merges all of that into one level -> [completions]
+ * map. /api/list, /api/monthly, and /api/members all read from this one
+ * merged map, which is also what makes followingVictors possible now.
+ *
+ * Two caveats worth knowing:
+ * 1. AREDL's docs don't spell out the exact field name a profile record
+ *    uses to say *which level* it's for (the docs literally say it "omits
+ *    the level field" without saying what replaces it). recordLevelId()
+ *    below tries several plausible field names. If completions/points come
+ *    out empty or wrong, hit /api/members?debug=1 — it dumps one real
+ *    profile record's raw shape so the exact field name can be confirmed
+ *    and recordLevelId() adjusted in one line.
+ * 2. This does one subrequest per clan member (capped at MAX_MEMBERS_WALKED
+ *    to stay under Workers' per-request subrequest limit — raise that cap,
+ *    or upgrade to Workers Paid for a much higher limit, if ROSE's roster
+ *    grows past it). Results are cached for 15 minutes either way.
  */
- 
+
 const JSON_HEADERS = {
   "content-type": "application/json;charset=UTF-8",
   "access-control-allow-origin": "*",
 };
- 
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
- 
+
     try {
       if (pathname === "/api/list") return await handleList(env, ctx);
       if (pathname === "/api/monthly") return await handleMonthly(env, ctx);
@@ -53,11 +71,11 @@ export default {
     }
   },
 };
- 
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
- 
+
 async function cached(env, key, ttlSeconds, loader) {
   const hit = await env.CACHE.get(key, "json").catch(() => null);
   if (hit) return hit;
@@ -65,104 +83,148 @@ async function cached(env, key, ttlSeconds, loader) {
   await env.CACHE.put(key, JSON.stringify(fresh), { expirationTtl: ttlSeconds }).catch(() => {});
   return fresh;
 }
- 
+
 /* ============================================================
-   /api/list — the clan's AREDL records (first victor per level),
-   straight from AREDL's clan profile endpoint.
+   /api/list — every main-list level ROSE has beaten, with every
+   clan member who's beaten it (not just the first).
    ============================================================ */
 async function handleList(env) {
-  const [profile, creatorByLevelId] = await Promise.all([
-    getClanProfileCached(env),
-    getCreatorLookupCached(env),
-  ]);
- 
-  const entries = profile.records.map((r) => recordToLevelEntry(r, creatorByLevelId));
+  const { byLevel } = await getClanCompletionsCached(env);
+  const entries = Object.values(byLevel)
+    .filter(({ level }) => level.position != null)
+    .map(({ level, completions }) => levelEntryFromCompletions(level, completions));
   return json(entries.sort((a, b) => a.rank - b.rank));
 }
- 
+
 /* ============================================================
-   /api/monthly — the same records, grouped by the month each was
-   achieved (AREDL's own `achieved_at` field), newest month first.
-   No D1, no manual snapshotting — this is always live.
+   /api/monthly — the same completions, grouped by the month each
+   level was first achieved by the clan (AREDL's achieved_at).
    ============================================================ */
 async function handleMonthly(env) {
-  const [profile, creatorByLevelId] = await Promise.all([
-    getClanProfileCached(env),
-    getCreatorLookupCached(env),
-  ]);
- 
-  const sorted = [...profile.records].sort(
-    (a, b) => new Date(b.achieved_at) - new Date(a.achieved_at)
-  );
- 
+  const { byLevel } = await getClanCompletionsCached(env);
+  const entries = Object.values(byLevel)
+    .filter(({ level }) => level.position != null)
+    .map(({ level, completions }) => levelEntryFromCompletions(level, completions))
+    .filter((e) => e.achievedAt);
+
+  const sorted = entries.sort((a, b) => new Date(b.achievedAt) - new Date(a.achievedAt));
   const grouped = {};
-  for (const r of sorted) {
-    const label = new Date(r.achieved_at).toLocaleString("en-US", { month: "long", year: "numeric" });
-    (grouped[label] ||= []).push(recordToLevelEntry(r, creatorByLevelId));
+  for (const e of sorted) {
+    const label = new Date(e.achievedAt).toLocaleString("en-US", { month: "long", year: "numeric" });
+    (grouped[label] ||= []).push(e);
   }
   for (const label in grouped) grouped[label].sort((a, b) => a.rank - b.rank);
   return json(grouped);
 }
- 
-function recordToLevelEntry(r, metaByLevelId) {
-  const meta = metaByLevelId.get(r.level.id) || {};
+
+// One AREDL level + its clan completions -> the shape the frontend expects.
+// Earliest achieved_at among the clan's completions is "the" verifier shown
+// on the card; everyone else becomes followingVictors.
+function levelEntryFromCompletions(level, completions) {
+  const sorted = [...completions].sort(
+    (a, b) => new Date(recordAchievedAt(a.record) || 0) - new Date(recordAchievedAt(b.record) || 0)
+  );
+  const [first, ...rest] = sorted;
   return {
-    rank: r.level.position,
-    id: r.level.id,
-    levelId: meta.gameId ?? r.level.level_id ?? null, // in-game level id, used for thumbnails
-    name: r.level.name,
-    creator: meta.creator ?? "Unknown",
-    verifierCountry: r.submitted_by.country ?? null,
-    verifier: r.submitted_by.global_name || r.submitted_by.username,
-    points: r.level.points ?? null,
-    videoUrl: r.video_url || null,
-    achievedAt: r.achieved_at,
+    rank: level.position,
+    id: level.id,
+    levelId: level.level_id ?? null, // in-game level id, used for thumbnails
+    name: level.name,
+    creator:
+      level.publisher?.global_name ??
+      level.publisher?.username ??
+      level.creators?.map((c) => c.global_name || c.username).join(", ") ??
+      "Unknown",
+    verifier: first.member.global_name || first.member.username,
+    verifierCountry: first.member.country ?? null,
+    points: level.points ?? null,
+    videoUrl: recordVideoUrl(first.record),
+    achievedAt: recordAchievedAt(first.record),
+    followingVictors: rest.map((c) => c.member.global_name || c.member.username),
   };
 }
- 
+
 /* ------------------------------------------------------------
    AREDL fetch helpers — all public, no auth required.
    ------------------------------------------------------------ */
-async function getClanProfileCached(env) {
-  return cached(env, "clan-profile:v1", 300, () => fetchClanProfile(env));
-}
- 
-async function fetchClanProfile(env) {
-  const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/clan/${env.AREDL_CLAN_ID}`);
-  if (!res.ok) throw new Error(`AREDL clan fetch failed: ${res.status}`);
-  return res.json();
-}
- 
 async function fetchAredlLevels(env) {
   const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/levels`);
   if (!res.ok) throw new Error(`AREDL level list fetch failed: ${res.status}`);
   return res.json();
 }
- 
-// level.id -> creator/publisher display name, built from one bulk fetch of
-// every AREDL level rather than one request per clan-beaten level.
-async function getCreatorLookupCached(env) {
-  return new Map(
-    Object.entries(
-      await cached(env, "creator-lookup:v2", 1800, async () => {
-        const levels = await fetchAredlLevels(env);
-        const entries = levels.map((lvl) => [
-          lvl.id,
-          {
-            gameId: lvl.level_id ?? null,
-            creator:
-              lvl.publisher?.global_name ??
-              lvl.publisher?.username ??
-              lvl.creators?.map((c) => c.global_name || c.username).join(", ") ??
-              "Unknown",
-          },
-        ]);
-        return Object.fromEntries(entries);
-      })
-    )
-  );
+
+async function getClanRosterCached(env) {
+  return cached(env, "roster:v1", 1800, async () => {
+    const res = await fetch(`${env.AREDL_API_BASE}/v2/api/clans/${env.AREDL_CLAN_ID}/members`);
+    if (!res.ok) throw new Error(`Clan members fetch failed: ${res.status}`);
+    return res.json();
+  });
 }
- 
+
+async function fetchMemberProfile(env, memberId) {
+  const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/profile/${memberId}`);
+  if (!res.ok) throw new Error(`Profile fetch failed for ${memberId}: ${res.status}`);
+  return res.json();
+}
+
+// AREDL's profile endpoint describes its `records` as a resolved record that
+// "omits the level field" without saying what identifies the level instead,
+// so every plausible field name is tried. Adjust/extend this one function if
+// /api/members?debug=1 shows a different real field name.
+function recordLevelId(r) {
+  return r.level_id ?? r.levelId ?? r.level?.id ?? r.aredl_level_id ?? null;
+}
+function recordAchievedAt(r) {
+  return r.achieved_at ?? r.achievedAt ?? r.created_at ?? null;
+}
+function recordVideoUrl(r) {
+  return r.video_url ?? r.videoUrl ?? null;
+}
+
+const MAX_MEMBERS_WALKED = 45; // keep total subrequests under Workers' per-request cap
+
+// level AREDL-uuid -> { level, completions: [{ member, record }] }, merged
+// from every clan member's own profile. See the file-header comment above
+// for why this replaces the clan endpoint's first-victor-only records.
+async function getClanCompletionsCached(env) {
+  return cached(env, "completions:v1", 900, async () => {
+    const [roster, levels] = await Promise.all([getClanRosterCached(env), fetchAredlLevels(env)]);
+    const levelById = new Map(levels.map((l) => [l.id, l]));
+
+    const members = roster.slice(0, MAX_MEMBERS_WALKED);
+    if (roster.length > MAX_MEMBERS_WALKED) {
+      console.warn(
+        `ROSE has ${roster.length} members — only the first ${MAX_MEMBERS_WALKED} were walked for completions this cache cycle.`
+      );
+    }
+
+    const perMember = await Promise.all(
+      members.map(async (m) => {
+        try {
+          const profile = await fetchMemberProfile(env, m.id);
+          return { member: m, records: profile.records || [] };
+        } catch (err) {
+          console.warn(`Couldn't load AREDL profile for ${m.global_name || m.username}:`, String(err));
+          return { member: m, records: [] };
+        }
+      })
+    );
+
+    const byLevel = new Map();
+    for (const { member, records } of perMember) {
+      for (const r of records) {
+        const levelId = recordLevelId(r);
+        const level = levelId ? levelById.get(levelId) : null;
+        if (!level) continue; // unresolved shape, or not a classic main-list level
+        if (!byLevel.has(levelId)) byLevel.set(levelId, { level, completions: [] });
+        byLevel.get(levelId).completions.push({ member, record: r });
+      }
+    }
+
+    return { byLevel: Object.fromEntries(byLevel), members: perMember.map((p) => p.member) };
+  });
+}
+
 /* ============================================================
    /api/progress — from the "PROGRESS" tab of the Google Sheet
    ============================================================ */
@@ -206,7 +268,7 @@ async function handleVideos(env) {
   });
   return json(data);
 }
- 
+
 // Minimal RSS <item> parser — works for most channel/RSS-style feeds
 // without pulling in an XML library. Swap this out for whatever your
 // actual feed source returns (JSON feed, sitemap, etc).
@@ -220,7 +282,7 @@ function parseVideoFeed(xml) {
     thumb: null,
   }));
 }
- 
+
 /* ============================================================
    Google Sheets helper — reads a named tab of a public sheet via
    the gviz endpoint (no service account needed, sheet just needs
@@ -292,54 +354,31 @@ async function handleUnrated(env) {
 }
 
 /* ============================================================
-   /api/members — clan leaderboard by AREDL points.
-   Points come from the clan endpoint's `members_points`. Country is read
-   from that entry if present, otherwise looked up from the member's AREDL
-   profile (capped to stay under Workers' subrequest limit). Optional
-   "MEMBERS" sheet tab (player | youtube) adds a channel link per member.
+   /api/members — clan leaderboard, points summed directly from
+   real completions (see getClanCompletionsCached above) rather
+   than AREDL's pre-split clan "contribution" figure. Country comes
+   straight from the clan roster. Optional "MEMBERS" sheet tab
+   (player | youtube) adds a channel link per member.
    ============================================================ */
-// AREDL's docs don't spell out the shape of a `members_points` entry, so find
-// the points figure by looking for a numeric field whose name mentions
-// points/score/contribution (top level first, then one level down).
-function extractPoints(entry) {
-  const looksLikePoints = (k) => /point|score|contrib/i.test(k);
-  const toNum = (v) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
-  for (const [k, v] of Object.entries(entry)) {
-    if (looksLikePoints(k) && Number.isFinite(toNum(v))) return toNum(v);
-  }
-  for (const v of Object.values(entry)) {
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      for (const [k2, v2] of Object.entries(v)) {
-        if (looksLikePoints(k2) && Number.isFinite(toNum(v2))) return toNum(v2);
+async function getMembersCached(env) {
+  return cached(env, "members:v5", 900, async () => {
+    const { byLevel, members } = await getClanCompletionsCached(env);
+
+    const pointsById = new Map();
+    for (const { level, completions } of Object.values(byLevel)) {
+      if (level.position == null) continue; // only main-list levels count toward points
+      for (const { member } of completions) {
+        pointsById.set(member.id, (pointsById.get(member.id) || 0) + (level.points || 0));
       }
     }
-  }
-  return 0;
-}
 
-async function getMembersCached(env) {
-  return cached(env, "members:v3", 600, async () => {
-    const profile = await getClanProfileCached(env);
-    const members = (profile.members_points || []).map((m) => {
-      const u = m.user || m.member || m.player || m.profile || m;
-      return {
-        id: u.id ?? m.user_id ?? null,
-        name: u.global_name || u.username || m.global_name || m.username || "Unknown",
-        points: Math.round(extractPoints(m) * 100) / 100,
-        country: u.country ?? null,
-        youtube: null,
-      };
-    });
-
-    const missing = members.filter((m) => m.country == null && m.id).slice(0, 30);
-    await Promise.all(
-      missing.map(async (m) => {
-        try {
-          const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/profile/${m.id}`);
-          if (res.ok) m.country = (await res.json()).country ?? null;
-        } catch {}
-      })
-    );
+    const result = members.map((m) => ({
+      id: m.id,
+      name: m.global_name || m.username,
+      points: Math.round((pointsById.get(m.id) || 0) * 100) / 100,
+      country: m.country ?? null,
+      youtube: null,
+    }));
 
     try {
       const rows = await fetchSheetRows(env, "MEMBERS");
@@ -349,20 +388,27 @@ async function getMembersCached(env) {
           .filter(([p, y]) => p && y)
           .map(([p, y]) => [String(p).toLowerCase(), y])
       );
-      for (const m of members) m.youtube = yt.get(m.name.toLowerCase()) ?? null;
+      for (const m of result) m.youtube = yt.get(m.name.toLowerCase()) ?? null;
     } catch (err) {
       console.warn("MEMBERS tab not readable (optional):", String(err));
     }
 
-    return members.sort((a, b) => b.points - a.points).map((m, i) => ({ ...m, rank: i + 1 }));
+    return result.sort((a, b) => b.points - a.points).map((m, i) => ({ ...m, rank: i + 1 }));
   });
 }
 
 async function handleMembers(env, ctx, request) {
-  // /api/members?debug=1 shows the raw first entry AREDL returns, for diagnosing field names.
+  // /api/members?debug=1 shows one roster entry and one raw profile record,
+  // for confirming the exact field name recordLevelId() should be reading.
   if (request && new URL(request.url).searchParams.get("debug")) {
-    const profile = await getClanProfileCached(env);
-    return json({ sample: (profile.members_points || []).slice(0, 2), keys: Object.keys(profile) });
+    const roster = await getClanRosterCached(env);
+    const sampleMember = roster[0] || null;
+    const profile = sampleMember ? await fetchMemberProfile(env, sampleMember.id) : null;
+    return json({
+      rosterSample: sampleMember,
+      profileRecordSample: profile?.records?.[0] || null,
+      profileKeys: profile ? Object.keys(profile) : [],
+    });
   }
   return json(await getMembersCached(env));
 }
