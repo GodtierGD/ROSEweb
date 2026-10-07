@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Members — ROSE Demonlist</title>
 <link rel="icon" href="Resources/ROSECLANLOGO.png" type="image/png">
-<meta name="description" content="The ROSE clan leaderboard, ranked by AREDL points.">
+<meta name="description" content="The ROSE clan leaderboard, ranked by total clan points.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ROSE Demonlist">
 <meta property="og:title" content="Members — ROSE Demonlist">
-<meta property="og:description" content="The ROSE clan leaderboard, ranked by AREDL points.">
+<meta property="og:description" content="The ROSE clan leaderboard, ranked by total clan points.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#ff3b52">
 <link rel="stylesheet" href="style.css">
@@ -19,6 +19,8 @@
   .member-row .m-rank { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:30px; min-width:62px; color:var(--accent); line-height:1; }
   .member-row .m-rank.tier-mid { color:var(--accent-3); }
   .member-row .m-rank.tier-low { color:var(--accent-cool); }
+  .member-row .m-avatar { width:44px; height:44px; border-radius:50%; flex-shrink:0; object-fit:cover; background:var(--surface-2); box-shadow:0 0 0 1px var(--border-strong); }
+  .member-row .m-avatar.fallback { display:flex; align-items:center; justify-content:center; font-family:var(--font-display); font-weight:700; font-size:18px; color:var(--text-muted); }
   .member-row .m-name { flex:1; min-width:0; font-family:var(--font-display); font-weight:700; font-style:italic; font-size:21px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style>
 </head>
@@ -29,7 +31,7 @@
   <div class="page-head">
     <div class="eyebrow">Clan leaderboard</div>
     <h1>Members</h1>
-    <p>Every clan member ranked by their AREDL points. Each member's share of a level is split between the clan members who beat it.</p>
+    <p>Every clan member ranked by their total clan points — the sum of the points for every level they've beaten.</p>
   </div>
 </header>
 
@@ -50,9 +52,16 @@
 
   function memberRowHTML(m) {
     const yt = m.youtube ? `<a class="watch-link" href="${esc(m.youtube)}" target="_blank" rel="noopener"><span>YouTube</span> ▶</a>` : "";
+    const initial = esc((m.name || "?").trim().charAt(0).toUpperCase());
+    // If the Discord avatar fails to load (deleted/changed hash), swap the
+    // broken image for the initial-in-a-circle fallback instead of a broken icon.
+    const avatar = m.avatar
+      ? `<img class="m-avatar" src="${esc(m.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=&quot;m-avatar fallback&quot;>${initial}</div>'">`
+      : `<div class="m-avatar fallback">${initial}</div>`;
     return `
       <div class="member-row">
         <div class="m-rank ${tierClass(m.rank)}">#${m.rank}</div>
+        ${avatar}
         <div class="m-name">${esc(m.name)}${flagHTML(m.country)}</div>
         <span class="pill points">${Math.round(m.points).toLocaleString()} pts</span>
         ${yt}

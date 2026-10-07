@@ -420,8 +420,26 @@ async function handleUnrated(env) {
    comes straight from the clan roster. Optional "MEMBERS" sheet tab
    (player | youtube) adds a channel link per member.
    ============================================================ */
+// Discord profile picture URL for a clan roster entry. Members with a custom
+// avatar get it from Discord's CDN (animated "a_" hashes are gifs); members
+// without one get Discord's default avatar for their account, picked the same
+// way Discord does it ((id >> 22) % 6). No discord_id at all -> null, and the
+// frontend falls back to an initial in a circle.
+function discordAvatarUrl(m) {
+  if (!m.discord_id) return null;
+  if (m.discord_avatar) {
+    const ext = String(m.discord_avatar).startsWith("a_") ? "gif" : "png";
+    return `https://cdn.discordapp.com/avatars/${m.discord_id}/${m.discord_avatar}.${ext}?size=64`;
+  }
+  try {
+    return `https://cdn.discordapp.com/embed/avatars/${Number((BigInt(m.discord_id) >> 22n) % 6n)}.png`;
+  } catch {
+    return null;
+  }
+}
+
 async function getMembersCached(env) {
-  return cached(env, "members:v6", 900, async () => {
+  return cached(env, "members:v7", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
     const clanPoints = buildClanPointsMap(byLevel);
 
@@ -439,6 +457,7 @@ async function getMembersCached(env) {
       name: m.global_name || m.username,
       points: Math.round((pointsById.get(m.id) || 0) * 100) / 100,
       country: m.country ?? null,
+      avatar: discordAvatarUrl(m),
       youtube: null,
     }));
 
