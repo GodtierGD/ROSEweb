@@ -256,28 +256,38 @@ async function firstWorkingImage(urls) {
 }
 
 function hydrateThumbnails(container, levels) {
+  const paint = (el, url) => {
+    if (!el || !url) return;
+    el.style.backgroundImage = `url('${url}')`;
+    el.style.backgroundSize = "cover";
+    el.style.backgroundPosition = "center";
+  };
+
   levels.forEach(async (level, i) => {
     const cardEl = container.querySelector(`[data-card="${i}"]`);
-    const card = cardEl && cardEl.querySelector(".bg-layer");
+    const bg = cardEl && cardEl.querySelector(".bg-layer");
     const thumb = cardEl && cardEl.querySelector(".thumb");
-    if (!card) return;
-    // 1) AREDL's own official thumbnail repo (best quality, most "official")
-    let url = await firstWorkingImage(aredlThumbnailCandidates(level));
-    // 2) the level's own in-game thumbnail (community thumbnail service)
-    if (!url && level.levelId) url = await loadImageOk(`https://levelthumbs.prevter.me/thumbnail/${level.levelId}/small`);
-    // 3) fall back to the completion video's YouTube thumbnail
-    if (!url) {
-      const videoId = extractYouTubeId(level.videoUrl);
-      if (videoId) url = await resolveYouTubeThumbnail(videoId);
-    }
-    if (!url) return;
-    // The same image feeds the soft card background and the visible thumbnail.
-    for (const el of [card, thumb]) {
-      if (!el) continue;
-      el.style.backgroundImage = `url('${url}')`;
-      el.style.backgroundSize = "cover";
-      el.style.backgroundPosition = "center";
-    }
+    if (!cardEl) return;
+
+    // Visible thumbnail: the YouTube thumbnail of the first clan victor's
+    // completion video (level.videoUrl is that victor's video).
+    const videoId = extractYouTubeId(level.videoUrl);
+    const videoThumbP = videoId ? resolveYouTubeThumbnail(videoId) : Promise.resolve(null);
+
+    // Card background: the level's own thumbnail.
+    const levelThumbP = (async () => {
+      // 1) AREDL's own official thumbnail repo (best quality, most "official")
+      let url = await firstWorkingImage(aredlThumbnailCandidates(level));
+      // 2) the level's own in-game thumbnail (community thumbnail service)
+      if (!url && level.levelId) url = await loadImageOk(`https://levelthumbs.prevter.me/thumbnail/${level.levelId}/small`);
+      return url;
+    })();
+
+    const [videoThumb, levelThumb] = await Promise.all([videoThumbP, levelThumbP]);
+    // Each falls back to the other if its own source is missing (e.g. the
+    // completion is on Medal/TikTok, or the level has no thumbnail yet).
+    paint(thumb, videoThumb || levelThumb);
+    paint(bg, levelThumb || videoThumb);
   });
 }
 
