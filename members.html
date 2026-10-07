@@ -28,7 +28,7 @@
   .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:18px; }
   .stat-tile { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; min-width:0; }
   .stat-tile .k { font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); font-weight:600; }
-  .stat-tile .v { font-family:var(--font-display); font-weight:700; font-size:20px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stat-tile .v { font-family:var(--font-display); font-weight:700; font-size:16px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .stat-tile .sub { font-size:12px; color:var(--text-muted); margin-top:1px; }
   .stat-cols { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
   @media (max-width:700px) { .stat-cols { grid-template-columns:1fr; } .member-row { gap:12px; padding:14px 14px; } }
@@ -58,7 +58,7 @@
   <div class="page-head">
     <div class="eyebrow">Clan leaderboard</div>
     <h1>Members</h1>
-    <p>Every clan member ranked by their total clan points — the sum of the points for every level they've beaten.</p>
+    <p>Members ranked by their POINTS.</p>
   </div>
 </header>
 
@@ -83,15 +83,15 @@
   }
 
   function statsHTML(st) {
-    if (!st || !st.extremeCount) return `<div class="none">No main-list completions yet.</div>`;
+    if (!st || !st.extremeCount) return `<div class="none">No list completions yet.</div>`;
     const tile = (k, v, sub) => `<div class="stat-tile"><div class="k">${k}</div><div class="v" title="${esc(v)}">${esc(v)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>`;
     const fv = st.firstVictories || { count: 0, levels: [] };
     return `
       <div class="stat-grid">
         ${tile("Hardest completion", st.hardest.name, `AREDL #${st.hardest.position}`)}
-        ${tile("Extreme demons", String(st.extremeCount), "main-list levels beaten")}
+        ${tile("Extreme demons", String(st.extremeCount), "completed")}
         ${tile("Most recent", st.mostRecent ? st.mostRecent.name : "—", st.mostRecent ? fmtDate(st.mostRecent.achievedAt) : "")}
-        ${tile("First victories", String(fv.count), "within the clan")}
+        ${tile("First victor of", String(fv.count), "levels in the clan")}
       </div>
       <div class="stat-cols">
         <div>
