@@ -13,12 +13,12 @@
   --text-muted: #97909f;
   --text-faint: #5f5a68;
 
-  --accent: #ff2b44;       /* crimson — top-tier / primary */
+  --accent: #ff4a4a;       /* crimson — top-tier / primary */
   --accent-soft: #ff3b5222;
-  --accent-2: #baca98;     /* amber — points */
+  --accent-2: #e65c5c;     /* amber — points */
   --accent-green: #55de8e; /* green — "from zero" progress */
-  --accent-3: #ffa26c;     /* Orange — mid tier */
-  --accent-cool: #b9b9b9;  /* grey — low tier / info */
+  --accent-3: #ff765b;     /* Orange — mid tier */
+  --accent-cool: #dfdfdf;  /* grey — low tier / info */
   --pending: #676767;      /* d.grey — unrated / pending */
 
   --font-display: 'Rajdhani', 'Inter', sans-serif;
