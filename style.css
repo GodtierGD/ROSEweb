@@ -13,11 +13,11 @@
   --text-muted: #97909f;
   --text-faint: #5f5a68;
 
-  --accent: #ff4a4a;       /* crimson — top-tier / primary */
+  --accent: #ff5353;       /* crimson — top-tier / primary */
   --accent-soft: #ff3b5222;
   --accent-2: #e65c5c;     /* amber — points */
   --accent-green: #55de8e; /* green — "from zero" progress */
-  --accent-3: #ff765b;     /* Orange — mid tier */
+  --accent-3: #ff7e65;     /* Orange — mid tier */
   --accent-cool: #dfdfdf;  /* grey — low tier / info */
   --pending: #676767;      /* d.grey — unrated / pending */
 
