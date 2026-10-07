@@ -26,7 +26,14 @@
 
 <main>
   <div class="container">
-    <select id="month-select" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;margin-bottom:20px;"></select>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
+      <select id="month-select" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;"></select>
+      <select id="sort" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
+        <option value="internal">Sort: Internal Ranking</option>
+        <option value="aredl">Sort: AREDL Ranking</option>
+        <option value="name">Sort: Level Name</option>
+      </select>
+    </div>
     <div id="month-mount">
       <div class="skel" style="height:104px;margin-bottom:12px;"></div>
       <div class="skel" style="height:104px;margin-bottom:12px;opacity:.6;"></div>
@@ -57,18 +64,32 @@
 
   function renderMonth(months, active) {
     renderPicker(months, active);
+    const sort = document.getElementById("sort").value;
 
-    const rows = [...(months[active] || [])].sort((a, b) => a.rank - b.rank);
+    let rows = [...(months[active] || [])];
+    if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
+    else rows.sort((a, b) => a.rank - b.rank);
+
     const mount = document.getElementById("month-mount");
-    mount.innerHTML = rows.length
-      ? rows.map((lvl, i) => levelCardHTML(lvl, i)).join("")
-      : `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${esc(active)}.</div>`;
-    if (rows.length) hydrateThumbnails(mount, rows);
+    if (!rows.length) {
+      mount.innerHTML = `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${esc(active)}.</div>`;
+      return;
+    }
+    const display = rows.map(lvl => applyRankDisplay(lvl, sort));
+    mount.innerHTML = display.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+    hydrateThumbnails(mount, display);
   }
 
   (async () => {
     const months = await apiGet("/monthly", MOCK_MONTHLY);
-    renderMonth(months, thisMonthLabel());
+    // Internal rank has to be computed across every month's levels at once
+    // (not per-month), so the same level always shows the same internal
+    // rank here as it does on the List page.
+    assignInternalRanks(Object.values(months).flat());
+
+    const active = thisMonthLabel();
+    renderMonth(months, active);
+    document.getElementById("sort").addEventListener("change", () => renderMonth(months, document.getElementById("month-select").value));
   })();
 </script>
 </body>

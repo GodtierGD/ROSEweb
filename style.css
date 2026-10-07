@@ -308,6 +308,7 @@ main { padding-bottom: 96px; }
 }
 
 .level-meta { flex: 1; min-width: 0; }
+.name-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .level-meta .name {
   font-family: var(--font-display);
   font-weight: 700;
@@ -317,6 +318,14 @@ main { padding-bottom: 96px; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+.alt-rank {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 .level-meta .by {
   font-family: var(--font-display);

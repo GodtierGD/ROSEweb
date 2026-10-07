@@ -129,6 +129,28 @@ function flagHTML(num) {
   return `<img class="flag" src="https://flagcdn.com/24x18/${iso}.png" srcset="https://flagcdn.com/48x36/${iso}.png 2x" width="20" height="15" alt="${iso.toUpperCase()}" title="${iso.toUpperCase()}" loading="lazy">`;
 }
 
+// Internal rank is ROSE's own sequential numbering (#1 = hardest level the
+// clan has beaten, #2 = next hardest, ...), distinct from a level's real
+// AREDL placement, which can have gaps (the clan's hardest beat might be
+// global AREDL #19, not #1). Computed once from the full hardest-to-easiest
+// order so it stays stable regardless of filtering, search, or the current
+// sort — and regardless of which page is asking, since it's always derived
+// the same way from the same underlying `rank` (AREDL placement).
+function assignInternalRanks(levels) {
+  [...levels].sort((a, b) => a.rank - b.rank).forEach((lvl, i) => { lvl.internalRank = i + 1; });
+}
+
+// Maps a level for display under a given sort mode: whichever number isn't
+// the big badge this time becomes a small `altRankLabel` next to the name.
+function applyRankDisplay(level, sort) {
+  const useAredl = sort === "aredl";
+  return {
+    ...level,
+    rank: useAredl ? level.rank : level.internalRank,
+    altRankLabel: useAredl ? `Internal #${level.internalRank}` : `AREDL #${level.rank}`,
+  };
+}
+
 function levelCardHTML(level, index) {
   const tier = tierClass(level.rank);
   const bgStyle = level.bg ? `background-image:url('${level.bg}');background-size:cover;background-position:center;` : `background:${fallbackGradient(index)};`;
@@ -143,7 +165,10 @@ function levelCardHTML(level, index) {
       <div class="rank ${tier}">#${level.rank}</div>
       <div class="divider"></div>
       <div class="level-meta">
-        <div class="name">${esc(level.name)}</div>
+        <div class="name-row">
+          <div class="name">${esc(level.name)}</div>
+          ${level.altRankLabel ? `<span class="alt-rank">${esc(level.altRankLabel)}</span>` : ""}
+        </div>
         <div class="by"><b>${esc(level.verifier)}</b>${flagHTML(level.verifierCountry)}${extraVictors}</div>
       </div>
       <div class="level-side">

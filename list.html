@@ -30,9 +30,9 @@
       <input id="search" type="text" placeholder="Search level or player…"
         style="flex:1;min-width:220px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
       <select id="sort" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
-        <option value="internal">CLAN Ranking</option>
-        <option value="aredl">AREDL Ranking</option>
-        <option value="name">LEVEL Name</option>
+        <option value="internal">Sort: Internal Ranking</option>
+        <option value="aredl">Sort: AREDL Ranking</option>
+        <option value="name">Sort: Level Name</option>
       </select>
     </div>
 
@@ -52,15 +52,6 @@
   document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
 
   let allLevels = [];
-
-  // Internal rank is ROSE's own sequential numbering (#1 = hardest level the
-  // clan has beaten, #2 = next hardest, ...), distinct from a level's real
-  // AREDL placement, which can have gaps (the clan's hardest beat might be
-  // global AREDL #19, not #1). Computed once from the full hardest-to-easiest
-  // order so it stays stable regardless of search or the current sort.
-  function assignInternalRanks(levels) {
-    [...levels].sort((a, b) => a.rank - b.rank).forEach((lvl, i) => { lvl.internalRank = i + 1; });
-  }
 
   function draw() {
     const q = document.getElementById("search").value.trim().toLowerCase();
@@ -86,7 +77,7 @@
       mount.innerHTML = `<div class="empty-state"><div class="title">No levels match</div>Try a different search term.</div>`;
       return;
     }
-    const display = rows.map(lvl => ({ ...lvl, rank: sort === "aredl" ? lvl.rank : lvl.internalRank }));
+    const display = rows.map(lvl => applyRankDisplay(lvl, sort));
     mount.innerHTML = display.map((lvl, i) => levelCardHTML(lvl, i)).join("");
     hydrateThumbnails(mount, display);
   }
