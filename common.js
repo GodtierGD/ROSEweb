@@ -147,7 +147,7 @@ function applyRankDisplay(level, sort) {
   return {
     ...level,
     rank: useAredl ? level.rank : level.internalRank,
-    altRankLabel: useAredl ? `Internal #${level.internalRank}` : `AREDL #${level.rank}`,
+    altRankLabel: useAredl ? `CLAN #${level.internalRank}` : `AREDL #${level.rank}`,
   };
 }
 

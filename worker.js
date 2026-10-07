@@ -85,14 +85,51 @@ async function cached(env, key, ttlSeconds, loader) {
 }
 
 /* ============================================================
+   Points — based on ROSE's own CLAN ranking (not AREDL's raw
+   `points`), on an exponential curve: the clan's single hardest
+   beat is worth 500, the clan's easiest beat is worth 1, and every
+   rank in between falls off exponentially. CLAN_POINTS_CURVE_K sets
+   how aggressively points pull away toward the top (higher = top
+   ranks worth disproportionately more). Recomputed from whatever
+   the clan's current level count is every time this runs, so it
+   adapts automatically as levels get added or removed — nothing
+   here is a fixed table that needs updating by hand.
+   ============================================================ */
+const CLAN_POINTS_MAX = 500;
+const CLAN_POINTS_MIN = 1;
+const CLAN_POINTS_CURVE_K = 5;
+
+function clanPointsForRank(clanRank, total) {
+  if (total <= 1) return CLAN_POINTS_MAX;
+  const t = (clanRank - 1) / (total - 1); // 0 at #1 (hardest), 1 at the bottom
+  const raw = (Math.exp(-CLAN_POINTS_CURVE_K * t) - Math.exp(-CLAN_POINTS_CURVE_K)) / (1 - Math.exp(-CLAN_POINTS_CURVE_K));
+  return Math.round(CLAN_POINTS_MIN + (CLAN_POINTS_MAX - CLAN_POINTS_MIN) * raw);
+}
+
+// level AREDL-uuid -> clan-curve points, ranked by real AREDL placement
+// across every main-list level the clan has beaten (not a subset — points
+// must mean the same thing on every page, so this always uses the full set).
+function buildClanPointsMap(byLevel) {
+  const levels = Object.values(byLevel)
+    .map(({ level }) => level)
+    .filter((level) => level.position != null)
+    .sort((a, b) => a.position - b.position);
+  const total = levels.length;
+  const map = new Map();
+  levels.forEach((level, i) => map.set(level.id, clanPointsForRank(i + 1, total)));
+  return map;
+}
+
+/* ============================================================
    /api/list — every main-list level ROSE has beaten, with every
    clan member who's beaten it (not just the first).
    ============================================================ */
 async function handleList(env) {
   const { byLevel } = await getClanCompletionsCached(env);
+  const clanPoints = buildClanPointsMap(byLevel);
   const entries = Object.values(byLevel)
     .filter(({ level }) => level.position != null)
-    .map(({ level, completions }) => levelEntryFromCompletions(level, completions));
+    .map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints));
   return json(entries.sort((a, b) => a.rank - b.rank));
 }
 
@@ -102,9 +139,10 @@ async function handleList(env) {
    ============================================================ */
 async function handleMonthly(env) {
   const { byLevel } = await getClanCompletionsCached(env);
+  const clanPoints = buildClanPointsMap(byLevel);
   const entries = Object.values(byLevel)
     .filter(({ level }) => level.position != null)
-    .map(({ level, completions }) => levelEntryFromCompletions(level, completions))
+    .map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints))
     .filter((e) => e.achievedAt);
 
   const sorted = entries.sort((a, b) => new Date(b.achievedAt) - new Date(a.achievedAt));
@@ -120,7 +158,7 @@ async function handleMonthly(env) {
 // One AREDL level + its clan completions -> the shape the frontend expects.
 // Earliest achieved_at among the clan's completions is "the" verifier shown
 // on the card; everyone else becomes followingVictors.
-function levelEntryFromCompletions(level, completions) {
+function levelEntryFromCompletions(level, completions, clanPoints) {
   const sorted = [...completions].sort(
     (a, b) => new Date(recordAchievedAt(a.record) || 0) - new Date(recordAchievedAt(b.record) || 0)
   );
@@ -137,7 +175,7 @@ function levelEntryFromCompletions(level, completions) {
       "Unknown",
     verifier: first.member.global_name || first.member.username,
     verifierCountry: first.member.country ?? null,
-    points: level.points ?? null,
+    points: clanPoints?.get(level.id) ?? level.points ?? null,
     videoUrl: recordVideoUrl(first.record),
     achievedAt: recordAchievedAt(first.record),
     followingVictors: rest.map((c) => c.member.global_name || c.member.username),
@@ -376,20 +414,23 @@ async function handleUnrated(env) {
 
 /* ============================================================
    /api/members — clan leaderboard, points summed directly from
-   real completions (see getClanCompletionsCached above) rather
-   than AREDL's pre-split clan "contribution" figure. Country comes
-   straight from the clan roster. Optional "MEMBERS" sheet tab
+   real completions (see getClanCompletionsCached above), using the
+   same clan-curve points as List/Monthly (not AREDL's own points,
+   and not AREDL's pre-split clan "contribution" figure). Country
+   comes straight from the clan roster. Optional "MEMBERS" sheet tab
    (player | youtube) adds a channel link per member.
    ============================================================ */
 async function getMembersCached(env) {
-  return cached(env, "members:v5", 900, async () => {
+  return cached(env, "members:v6", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
+    const clanPoints = buildClanPointsMap(byLevel);
 
     const pointsById = new Map();
     for (const { level, completions } of Object.values(byLevel)) {
       if (level.position == null) continue; // only main-list levels count toward points
+      const pts = clanPoints.get(level.id) || 0;
       for (const { member } of completions) {
-        pointsById.set(member.id, (pointsById.get(member.id) || 0) + (level.points || 0));
+        pointsById.set(member.id, (pointsById.get(member.id) || 0) + pts);
       }
     }
 
