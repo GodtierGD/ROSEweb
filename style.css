@@ -303,7 +303,7 @@ main { padding-bottom: 96px; }
 .rank.top-two { color: var(--accent-5); text-shadow: 0 0 18px #7c6cff22; }
 .rank.top-three { color: var(--accent-6); text-shadow: 0 0 18px #7c6cff22; }
 .rank.tier-high { color: var(--accent); text-shadow: 0 0 18px #7c6cff22; }
-.rank.tier-high { color: var(--accent-3); text-shadow: 0 0 18px #7c6cff22; }
+.rank.tier-mid { color: var(--accent-3); text-shadow: 0 0 18px #7c6cff22; }
 .rank.tier-low { color: var(--accent-cool); text-shadow: 0 0 18px #3fb6ff22; }
 .rank.tier-pending { color: var(--pending); text-shadow: none; font-style: normal; }
 
