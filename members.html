@@ -14,8 +14,35 @@
 <meta name="theme-color" content="#ff3b52">
 <link rel="stylesheet" href="style.css">
 <style>
-  .member-row { position:relative; display:flex; align-items:center; gap:18px; padding:16px 22px; margin-bottom:10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }
-  .member-row:hover { border-color:var(--border-strong); }
+  .member-card { position:relative; margin-bottom:10px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); overflow:hidden; isolation:isolate; }
+  .member-card:hover, .member-card.open { border-color:var(--border-strong); }
+  /* Same soft thumbnail background as the level cards — here it's the member's hardest completion. */
+  .member-card .bg-layer { position:absolute; inset:0; z-index:-2; filter:blur(2px) saturate(1.3); transform:scale(1.15); opacity:0.55; }
+  .member-card .fade-layer { position:absolute; inset:0; z-index:-1; background:linear-gradient(90deg, var(--surface) 22%, rgba(21,18,25,0.55) 65%, rgba(21,18,25,0.25) 100%); }
+  .member-row { display:flex; align-items:center; gap:18px; padding:16px 22px; cursor:pointer; user-select:none; }
+  .member-row:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  .m-chevron { flex-shrink:0; color:var(--text-muted); font-size:12px; transition:transform 0.15s ease; }
+  .member-card.open .m-chevron { transform:rotate(180deg); }
+  .member-stats { display:none; padding:18px 22px 22px; border-top:1px solid var(--border); background:rgba(11,10,14,0.6); }
+  .member-card.open .member-stats { display:block; }
+  .stat-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:18px; }
+  .stat-tile { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; min-width:0; }
+  .stat-tile .k { font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-faint); font-weight:600; }
+  .stat-tile .v { font-family:var(--font-display); font-weight:700; font-size:20px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .stat-tile .sub { font-size:12px; color:var(--text-muted); margin-top:1px; }
+  .stat-cols { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
+  @media (max-width:700px) { .stat-cols { grid-template-columns:1fr; } .member-row { gap:12px; padding:14px 14px; } }
+  .stat-cols h4 { margin:0 0 8px; font-family:var(--font-display); font-size:14px; color:var(--text-muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; max-height:150px; overflow:auto; }
+  .chip { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border-strong); background:var(--surface); white-space:nowrap; }
+  .chip b { color:var(--accent); font-family:var(--font-display); margin-right:4px; }
+  .top-list { list-style:none; margin:0; padding:0; }
+  .top-list li { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .top-list li:last-child { border-bottom:none; }
+  .top-list .n { font-family:var(--font-display); font-weight:700; font-style:italic; color:var(--accent); min-width:26px; }
+  .top-list .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .top-list .meta { font-size:12px; color:var(--text-faint); white-space:nowrap; }
+  .none { color:var(--text-faint); font-size:13px; }
   .member-row .m-rank { font-family:var(--font-display); font-weight:700; font-style:italic; font-size:30px; min-width:62px; color:var(--accent); line-height:1; }
   .member-row .m-rank.tier-mid { color:var(--accent-3); }
   .member-row .m-rank.tier-low { color:var(--accent-cool); }
@@ -50,7 +77,37 @@
   renderNav("members.html");
   document.getElementById("clan-name-footer").textContent = CONFIG.clanName;
 
-  function memberRowHTML(m) {
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+
+  function statsHTML(st) {
+    if (!st || !st.extremeCount) return `<div class="none">No main-list completions yet.</div>`;
+    const tile = (k, v, sub) => `<div class="stat-tile"><div class="k">${k}</div><div class="v" title="${esc(v)}">${esc(v)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>`;
+    const fv = st.firstVictories || { count: 0, levels: [] };
+    return `
+      <div class="stat-grid">
+        ${tile("Hardest completion", st.hardest.name, `AREDL #${st.hardest.position}`)}
+        ${tile("Extreme demons", String(st.extremeCount), "main-list levels beaten")}
+        ${tile("Most recent", st.mostRecent ? st.mostRecent.name : "—", st.mostRecent ? fmtDate(st.mostRecent.achievedAt) : "")}
+        ${tile("First victories", String(fv.count), "within the clan")}
+      </div>
+      <div class="stat-cols">
+        <div>
+          <h4>First victor of</h4>
+          ${fv.count ? `<div class="chips">${fv.levels.map(l => `<span class="chip"><b>#${l.position}</b>${esc(l.name)}</span>`).join("")}</div>` : `<div class="none">None yet.</div>`}
+        </div>
+        <div>
+          <h4>Top completions</h4>
+          <ol class="top-list">
+            ${st.top.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span><span class="meta">AREDL #${t.position}${t.points != null ? ` · ${t.points} pts` : ""}</span></li>`).join("")}
+          </ol>
+        </div>
+      </div>`;
+  }
+
+  function memberRowHTML(m, i) {
     const yt = m.youtube ? `<a class="watch-link" href="${esc(m.youtube)}" target="_blank" rel="noopener"><span>YouTube</span> ▶</a>` : "";
     const initial = esc((m.name || "?").trim().charAt(0).toUpperCase());
     // If the Discord avatar fails to load (deleted/changed hash), swap the
@@ -59,20 +116,48 @@
       ? `<img class="m-avatar" src="${esc(m.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=&quot;m-avatar fallback&quot;>${initial}</div>'">`
       : `<div class="m-avatar fallback">${initial}</div>`;
     return `
-      <div class="member-row">
-        <div class="m-rank ${tierClass(m.rank)}">#${m.rank}</div>
-        ${avatar}
-        <div class="m-name">${esc(m.name)}${flagHTML(m.country)}</div>
-        <span class="pill points">${Math.round(m.points).toLocaleString()} pts</span>
-        ${yt}
+      <div class="member-card" data-card="${i}">
+        <div class="bg-layer" style="background:${fallbackGradient(i)};"></div>
+        <div class="fade-layer"></div>
+        <div class="member-row" role="button" tabindex="0" aria-expanded="false">
+          <div class="m-rank ${tierClass(m.rank)}">#${m.rank}</div>
+          ${avatar}
+          <div class="m-name">${esc(m.name)}${flagHTML(m.country)}</div>
+          <span class="pill points">${Math.round(m.points).toLocaleString()} pts</span>
+          ${yt}
+          <span class="m-chevron">&#9662;</span>
+        </div>
+        <div class="member-stats">${statsHTML(m.stats)}</div>
       </div>`;
   }
 
   (async () => {
     const members = await apiGet("/members", MOCK_MEMBERS);
-    document.getElementById("members-mount").innerHTML = members.length
+    const mount = document.getElementById("members-mount");
+    mount.innerHTML = members.length
       ? members.map(memberRowHTML).join("")
       : `<div class="empty-state"><div class="title">No members found</div>The clan has no points on AREDL yet.</div>`;
+
+    // Each card's background = that member's hardest completion (same
+    // thumbnail lookup the level cards use). Members with no completions
+    // get an empty placeholder so indexes stay aligned.
+    hydrateThumbnails(mount, members.map(m => (m.stats && m.stats.hardest) || {}));
+
+    // Dropdown: click (or Enter/Space) on a member row to expand their stats.
+    // Clicking the YouTube link inside the row shouldn't toggle it.
+    const toggle = (row) => {
+      const card = row.closest(".member-card");
+      const open = card.classList.toggle("open");
+      row.setAttribute("aria-expanded", String(open));
+    };
+    mount.addEventListener("click", (e) => {
+      const row = e.target.closest(".member-row");
+      if (row && !e.target.closest("a")) toggle(row);
+    });
+    mount.addEventListener("keydown", (e) => {
+      const row = e.target.closest(".member-row");
+      if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(row); }
+    });
   })();
 </script>
 </body>

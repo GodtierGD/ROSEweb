@@ -420,6 +420,71 @@ async function handleUnrated(env) {
    comes straight from the clan roster. Optional "MEMBERS" sheet tab
    (player | youtube) adds a channel link per member.
    ============================================================ */
+// Per-member stat blocks for the Members page dropdowns, derived from the
+// same merged completions map as everything else. Only main-list levels
+// count (AREDL's main list is the extreme demon list, so "extreme demon
+// count" = how many main-list levels they've beaten). "First victory" uses
+// the exact same earliest-achieved_at ordering as /api/list, so the member
+// shown as a level's verifier there is the one credited with the first
+// victory here.
+function buildMemberStats(byLevel, clanPoints) {
+  const stats = new Map(); // member id -> { completions: [], firstVictories: [] }
+  const get = (id) => {
+    if (!stats.has(id)) stats.set(id, { completions: [], firstVictories: [] });
+    return stats.get(id);
+  };
+
+  for (const { level, completions } of Object.values(byLevel)) {
+    if (level.position == null) continue;
+    const sorted = [...completions].sort(
+      (a, b) => new Date(recordAchievedAt(a.record) || 0) - new Date(recordAchievedAt(b.record) || 0)
+    );
+    sorted.forEach(({ member, record }, i) => {
+      const s = get(member.id);
+      s.completions.push({ level, achievedAt: recordAchievedAt(record), videoUrl: recordVideoUrl(record) });
+      if (i === 0) s.firstVictories.push(level);
+    });
+  }
+
+  const brief = (c) => ({
+    id: c.level.id,
+    levelId: c.level.level_id ?? null, // in-game id, for thumbnails
+    name: c.level.name,
+    position: c.level.position,
+    points: clanPoints.get(c.level.id) ?? null,
+    videoUrl: c.videoUrl || null,
+  });
+
+  const out = new Map();
+  for (const [id, s] of stats) {
+    const byHardest = [...s.completions].sort((a, b) => a.level.position - b.level.position);
+    const dated = s.completions
+      .filter((c) => c.achievedAt)
+      .sort((a, b) => new Date(b.achievedAt) - new Date(a.achievedAt));
+    out.set(id, {
+      hardest: brief(byHardest[0]),
+      extremeCount: s.completions.length,
+      mostRecent: dated[0] ? { ...brief(dated[0]), achievedAt: dated[0].achievedAt } : null,
+      firstVictories: {
+        count: s.firstVictories.length,
+        levels: s.firstVictories
+          .sort((a, b) => a.position - b.position)
+          .map((l) => ({ name: l.name, position: l.position })),
+      },
+      top: byHardest.slice(0, 5).map(brief),
+    });
+  }
+  return out;
+}
+
+const EMPTY_MEMBER_STATS = {
+  hardest: null,
+  extremeCount: 0,
+  mostRecent: null,
+  firstVictories: { count: 0, levels: [] },
+  top: [],
+};
+
 // Discord profile picture URL for a clan roster entry. Members with a custom
 // avatar get it from Discord's CDN (animated "a_" hashes are gifs); members
 // without one get Discord's default avatar for their account, picked the same
@@ -439,9 +504,10 @@ function discordAvatarUrl(m) {
 }
 
 async function getMembersCached(env) {
-  return cached(env, "members:v7", 900, async () => {
+  return cached(env, "members:v8", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
     const clanPoints = buildClanPointsMap(byLevel);
+    const statsById = buildMemberStats(byLevel, clanPoints);
 
     const pointsById = new Map();
     for (const { level, completions } of Object.values(byLevel)) {
@@ -458,6 +524,7 @@ async function getMembersCached(env) {
       points: Math.round((pointsById.get(m.id) || 0) * 100) / 100,
       country: m.country ?? null,
       avatar: discordAvatarUrl(m),
+      stats: statsById.get(m.id) ?? EMPTY_MEMBER_STATS,
       youtube: null,
     }));
 

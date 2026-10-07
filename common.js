@@ -352,8 +352,20 @@ const MOCK_UNRATED = [
 ];
 
 const MOCK_MEMBERS = [
-  { rank: 1, name: "Skelezavr", points: 3120.5, country: 643, youtube: "#" },
-  { rank: 2, name: "Comzy", points: 2874.1, country: 826, youtube: "#" },
+  {
+    rank: 1, name: "Skelezavr", points: 3120.5, country: 643, youtube: "#",
+    stats: {
+      hardest: { id: "x", levelId: 0, name: "Acheron", position: 3, points: 420, videoUrl: null },
+      extremeCount: 4,
+      mostRecent: { name: "Kyouki", position: 21, points: 60, achievedAt: "2026-09-14T00:00:00Z" },
+      firstVictories: { count: 2, levels: [{ name: "Acheron", position: 3 }, { name: "Avernus", position: 14 }] },
+      top: [
+        { name: "Acheron", position: 3, points: 420 }, { name: "Avernus", position: 14, points: 160 },
+        { name: "Kyouki", position: 21, points: 60 }, { name: "Firework", position: 37, points: 12 },
+      ],
+    },
+  },
+  { rank: 2, name: "Comzy", points: 2874.1, country: 826, youtube: "#", stats: { hardest: null, extremeCount: 0, mostRecent: null, firstVictories: { count: 0, levels: [] }, top: [] } },
   { rank: 3, name: "Yaser", points: 1990.8, country: 840, youtube: null },
   { rank: 4, name: "Player12", points: 842.3, country: 276, youtube: null },
 ];
