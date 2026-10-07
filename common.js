@@ -167,6 +167,8 @@ function levelCardHTML(level, index) {
       <div class="fade-layer"></div>
       <div class="rank ${tier}">#${level.rank}</div>
       <div class="divider"></div>
+      <div class="thumb" style="${bgStyle}"></div>
+      <div class="divider"></div>
       <div class="level-meta">
         <div class="name-row">
           <div class="name">${esc(level.name)}</div>
@@ -255,7 +257,9 @@ async function firstWorkingImage(urls) {
 
 function hydrateThumbnails(container, levels) {
   levels.forEach(async (level, i) => {
-    const card = container.querySelector(`[data-card="${i}"] .bg-layer`);
+    const cardEl = container.querySelector(`[data-card="${i}"]`);
+    const card = cardEl && cardEl.querySelector(".bg-layer");
+    const thumb = cardEl && cardEl.querySelector(".thumb");
     if (!card) return;
     // 1) AREDL's own official thumbnail repo (best quality, most "official")
     let url = await firstWorkingImage(aredlThumbnailCandidates(level));
@@ -267,9 +271,13 @@ function hydrateThumbnails(container, levels) {
       if (videoId) url = await resolveYouTubeThumbnail(videoId);
     }
     if (!url) return;
-    card.style.backgroundImage = `url('${url}')`;
-    card.style.backgroundSize = "cover";
-    card.style.backgroundPosition = "center";
+    // The same image feeds the soft card background and the visible thumbnail.
+    for (const el of [card, thumb]) {
+      if (!el) continue;
+      el.style.backgroundImage = `url('${url}')`;
+      el.style.backgroundSize = "cover";
+      el.style.backgroundPosition = "center";
+    }
   });
 }
 

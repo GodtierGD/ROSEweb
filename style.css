@@ -314,6 +314,17 @@ main { padding-bottom: 96px; }
   margin: 2px 0;
 }
 
+/* Level thumbnail between the rank and the details: rank | thumb | details */
+.thumb {
+  flex-shrink: 0;
+  width: 128px;
+  height: 72px;
+  border-radius: 8px;
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
 .level-meta { flex: 1; min-width: 0; }
 .name-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .level-meta .name {
@@ -428,5 +439,6 @@ footer {
   .rank { font-size: 28px; min-width: 50px; }
   .level-meta .name { font-size: 18px; }
   .level-side .watch-link span { display: none; }
+  .thumb { width: 84px; height: 48px; }
 }
 .flag { display: inline-block; vertical-align: -2px; margin-left: 8px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.12); }
