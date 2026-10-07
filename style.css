@@ -13,11 +13,14 @@
   --text-muted: #97909f;
   --text-faint: #5f5a68;
 
+  --accent-4: #ffd599; 
+  --accent-5: #d1d1d1; 
+  --accent-6: #906161;  
   --accent: #ff5353;       /* crimson — top-tier / primary */
   --accent-soft: #ff3b5222;
   --accent-2: #e65c5c;     /* amber — points */
   --accent-green: #55de8e; /* green — "from zero" progress */
-  --accent-3: #ff7e65;     /* Orange — mid tier */
+  --accent-3: #ff9d65;     /* Orange — mid tier */
   --accent-cool: #dfdfdf;  /* grey — low tier / info */
   --pending: #676767;      /* d.grey — unrated / pending */
 
@@ -296,7 +299,10 @@ main { padding-bottom: 96px; }
   text-shadow: 0 0 22px var(--accent-soft);
   line-height: 1;
 }
-.rank.tier-mid { color: var(--accent-3); text-shadow: 0 0 18px #7c6cff22; }
+.rank.top-one { color: var(--accent-4); text-shadow: 0 0 18px #7c6cff22; }
+.rank.top-two { color: var(--accent-5); text-shadow: 0 0 18px #7c6cff22; }
+.rank.top-three { color: var(--accent-6); text-shadow: 0 0 18px #7c6cff22; }
+.rank.tier-high { color: var(--accent-); text-shadow: 0 0 18px #7c6cff22; }
 .rank.tier-low { color: var(--accent-cool); text-shadow: 0 0 18px #3fb6ff22; }
 .rank.tier-pending { color: var(--pending); text-shadow: none; font-style: normal; }
 
