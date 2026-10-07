@@ -101,8 +101,8 @@ async function apiGet(path, mockData) {
    Tiering helper — purely visual, encodes rank into color weight
    ------------------------------------------------------------ */
 function tierClass(rank) {
-  if (rank <= 10) return "";
-  if (rank <= 40) return "tier-mid";
+  if (rank <= 75) return "";
+  if (rank <= 150) return "tier-mid";
   return "tier-low";
 }
 
