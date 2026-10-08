@@ -21,7 +21,7 @@
   <div class="page-head">
     <div class="eyebrow">Ranked by AREDL placement</div>
     <h1>The List</h1>
-    <p>Every rated level a clan member has beaten, sorted hardest to easiest. Points and placement come straight from AREDL.</p>
+    <p>Every rated level a clan member has beaten, sorted hardest to easiest. Tick <b>Unrated</b> to slot in the levels AREDL hasn't rated yet, at the spot the clan has given them.</p>
   </div>
 </header>
 
@@ -35,6 +35,7 @@
         <option value="aredl">Sort: AREDL Ranking</option>
         <option value="name">Sort: Level Name</option>
       </select>
+      <label class="check-chip" title="Include levels AREDL hasn't rated yet"><input type="checkbox" id="show-unrated"> Unrated</label>
     </div>
 
     <div id="list-mount">
@@ -57,21 +58,30 @@
   function draw() {
     const q = document.getElementById("search").value.trim().toLowerCase();
     const sort = document.getElementById("sort").value;
+    const showUnrated = document.getElementById("show-unrated").checked;
+
+    // Unrated levels only appear when the checkbox is ticked. With them in,
+    // the CLAN numbering is the worker's combined list (unrated levels sit at
+    // their CLANRANK and everything below shifts down); without them it's the
+    // plain 1..N count of AREDL-rated levels.
+    const pool = showUnrated ? allLevels : allLevels.filter(l => !l.unrated);
+    if (showUnrated && pool.some(l => l.combinedRank != null)) pool.forEach(l => { l.internalRank = l.combinedRank; });
+    else assignInternalRanks(pool);
 
     // Matches a player on either side: the level's listed verifier, or
     // anyone in followingVictors (every other clan member who's also
     // beaten it) — so searching a name surfaces every completion of theirs.
-    let rows = allLevels.filter(l =>
+    let rows = pool.filter(l =>
       !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q)
       || (l.followingVictors || []).some(v => v.toLowerCase().includes(q))
     );
 
-    // Internal and AREDL modes share the same underlying order (hardest to
-    // easiest by AREDL placement) — they only differ in which number ends up
-    // on the badge. Name mode sorts alphabetically but still shows the
-    // stable internal rank, so the number stays meaningful either way.
+    // CLAN and AREDL modes share the same underlying order (hardest to
+    // easiest) — they only differ in which number ends up on the badge.
+    // Name mode sorts alphabetically but keeps the stable CLAN rank.
+    const order = l => l.combinedRank ?? l.rank;
     if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
-    else rows.sort((a, b) => a.rank - b.rank);
+    else rows.sort((a, b) => order(a) - order(b));
 
     const mount = document.getElementById("list-mount");
     if (!rows.length) {
@@ -84,11 +94,11 @@
   }
 
   (async () => {
-    allLevels = await apiGet("/list", MOCK_LIST);
-    assignInternalRanks(allLevels);
+    allLevels = await apiGet("/list?unrated=1", MOCK_LIST);
     draw();
     document.getElementById("search").addEventListener("input", draw);
     document.getElementById("sort").addEventListener("change", draw);
+    document.getElementById("show-unrated").addEventListener("change", draw);
   })();
 </script>
 </body>

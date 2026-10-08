@@ -3,10 +3,11 @@
  *
  * Routes:
  *   GET /api/list              -> every main-list level ROSE has beaten, any member (cached)
+ *                                 add ?unrated=1 to also merge in placed UNRATED-sheet levels
  *   GET /api/monthly           -> the same, grouped by achieved_at month
  *   GET /api/progress          -> per-player progress, from the "PROGRESS" tab of a Google Sheet
  *   GET /api/videos            -> channel upload feed (non-YouTube-API), cached
- *   GET /api/unrated           -> rows from the "UNRATED" tab of a public Google Sheet
+ *   GET /api/unrated           -> the "UNRATED" sheet tab as its own list (with where each would sit on the main list)
  *   GET /api/members           -> clan members ranked by summed real AREDL points (+ country, optional YouTube from "MEMBERS" tab)
  *   GET /api/other             -> top-10 most / fewest attempts, from the "HIGHATT" and "LOWATT" tabs
  *
@@ -57,7 +58,7 @@ export default {
     const { pathname } = url;
 
     try {
-      if (pathname === "/api/list") return await handleList(env, ctx);
+      if (pathname === "/api/list") return await handleList(env, ctx, request);
       if (pathname === "/api/monthly") return await handleMonthly(env, ctx);
       if (pathname === "/api/progress") return await handleProgress(env, ctx);
       if (pathname === "/api/videos") return await handleVideos(env, ctx);
@@ -124,13 +125,21 @@ function buildClanPointsMap(byLevel) {
    /api/list — every main-list level ROSE has beaten, with every
    clan member who's beaten it (not just the first).
    ============================================================ */
-async function handleList(env) {
+async function getRatedEntries(env) {
   const { byLevel } = await getClanCompletionsCached(env);
   const clanPoints = buildClanPointsMap(byLevel);
-  const entries = Object.values(byLevel)
+  return Object.values(byLevel)
     .filter(({ level }) => level.position != null)
-    .map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints));
-  return json(entries.sort((a, b) => a.rank - b.rank));
+    .map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints))
+    .sort((a, b) => a.rank - b.rank);
+}
+
+async function handleList(env, ctx, request) {
+  const rated = await getRatedEntries(env);
+  const wantsUnrated = request && new URL(request.url).searchParams.get("unrated");
+  if (!wantsUnrated) return json(rated);
+  const { merged } = await combineWithUnrated(env, rated);
+  return json(merged);
 }
 
 /* ============================================================
@@ -250,7 +259,7 @@ const MAX_MEMBERS_WALKED = 45; // keep total subrequests under Workers' per-requ
 // from every clan member's own profile. See the file-header comment above
 // for why this replaces the clan endpoint's first-victor-only records.
 async function getClanCompletionsCached(env) {
-  return cached(env, "completions:v1", 900, async () => {
+  return cached(env, "completions:v2", 900, async () => {
     const [roster, levels] = await Promise.all([getClanRosterCached(env), fetchAredlLevels(env)]);
     const levelById = new Map(levels.map((l) => [l.id, l]));
 
@@ -284,8 +293,133 @@ async function getClanCompletionsCached(env) {
       }
     }
 
+    // FLEXIRECORDS: completions AREDL didn't accept but the clan does. An
+    // AREDL record for the same member+level always wins over a flexi one.
+    const flexi = await loadFlexiRecords(env, roster, levels);
+    for (const { member, level, record } of flexi) {
+      if (!byLevel.has(level.id)) byLevel.set(level.id, { level, completions: [] });
+      const entry = byLevel.get(level.id);
+      if (entry.completions.some((c) => c.member.id === member.id)) continue;
+      entry.completions.push({ member, record });
+    }
+
     return { byLevel: Object.fromEntries(byLevel), members: perMember.map((p) => p.member) };
   });
+}
+
+/* ============================================================
+   FLEXIRECORDS — the "FLEXIRECORDS" sheet tab
+   LEVELNAME | PLAYERNAME | ?COMPDATE | ?VIDEOLINK | ?REASON
+   For records AREDL rejected on technicalities (an unlucky crash,
+   a harmless mod, no mic...) that the clan accepts anyway. They are
+   merged into the normal completions, so they count everywhere (List,
+   Monthly, Members) exactly like an AREDL record. ?REASON is for the
+   clan managers only and is never sent to the site.
+   Completion date: the video's published date wins when there's a
+   YouTube link; otherwise ?COMPDATE (D/M/Y). Needs one or the other.
+   ============================================================ */
+const FLEXI_MAX_DATE_FETCHES = 5; // new YouTube lookups per refresh (keeps subrequests low); the rest resolve next refresh
+
+const normName = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+
+function extractYouTubeIdServer(url) {
+  const m = String(url || "").match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
+// "20/8/2025", "20-08-2025", "20.8.25", or gviz's "Date(2025,7,20)" -> ISO string (UTC midnight), or null.
+function parseDMY(raw) {
+  const str = String(raw ?? "").trim();
+  if (!str) return null;
+  let d, m, y;
+  const g = str.match(/^Date\((\d{4}),\s*(\d{1,2}),\s*(\d{1,2})/);
+  if (g) { y = +g[1]; m = +g[2] + 1; d = +g[3]; } // gviz months are 0-based
+  else {
+    const t = str.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+    if (!t) return null;
+    d = +t[1]; m = +t[2]; y = +t[3];
+    if (y < 100) y += 2000;
+  }
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d ? dt.toISOString() : null;
+}
+
+// YouTube has no key-free API for this, so read the watch page's metadata.
+async function fetchYouTubePublishDate(id) {
+  try {
+    const res = await fetch(`https://www.youtube.com/watch?v=${id}`, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "accept-language": "en-US,en;q=0.9",
+        cookie: "CONSENT=YES+cb; SOCS=CAI",
+      },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const m =
+      html.match(/itemprop="datePublished"\s+content="([^"]+)"/) ||
+      html.match(/content="([^"]+)"\s+itemprop="datePublished"/) ||
+      html.match(/"publishDate":"([^"]+)"/) ||
+      html.match(/"uploadDate":"([^"]+)"/);
+    if (!m) return null;
+    const dt = new Date(m[1]);
+    return isNaN(dt) ? null : dt.toISOString();
+  } catch (err) {
+    console.warn(`YouTube date lookup failed for ${id}:`, String(err));
+    return null;
+  }
+}
+
+// videoId -> ISO publish date, remembered in KV forever (a video's publish
+// date never changes), so each video is only ever looked up once.
+async function resolveVideoDates(env, videoIds) {
+  const store = (await env.CACHE.get("ytdates:v1", "json").catch(() => null)) || {};
+  const pending = videoIds.filter((id) => !store[id]).slice(0, FLEXI_MAX_DATE_FETCHES);
+  if (!pending.length) return store;
+  const found = await Promise.all(pending.map(async (id) => [id, await fetchYouTubePublishDate(id)]));
+  let changed = false;
+  for (const [id, iso] of found) if (iso) { store[id] = iso; changed = true; }
+  if (changed) await env.CACHE.put("ytdates:v1", JSON.stringify(store)).catch(() => {});
+  return store;
+}
+
+async function loadFlexiRecords(env, roster, levels) {
+  let rows;
+  try {
+    rows = await fetchSheetRows(env, "FLEXIRECORDS");
+  } catch (err) {
+    console.warn("FLEXIRECORDS tab not readable (optional):", String(err));
+    return [];
+  }
+
+  const levelByName = new Map(levels.map((l) => [normName(l.name), l]));
+  const memberByName = new Map();
+  for (const m of roster) for (const n of [m.global_name, m.username]) if (n && !memberByName.has(normName(n))) memberByName.set(normName(n), m);
+
+  const parsed = rows
+    .map((r) => ({
+      levelName: pick(r, "levelname", "level"),
+      player: pick(r, "playername", "player"),
+      video: String(pick(r, "videolink", "video")).trim(),
+      compDate: parseDMY(pick(r, "compdate", "date")),
+    }))
+    .filter((r) => r.levelName && r.player);
+
+  const ids = [...new Set(parsed.map((r) => extractYouTubeIdServer(r.video)).filter(Boolean))];
+  const videoDates = ids.length ? await resolveVideoDates(env, ids) : {};
+
+  const out = [];
+  for (const r of parsed) {
+    const level = levelByName.get(normName(r.levelName));
+    const member = memberByName.get(normName(r.player));
+    if (!level) { console.warn(`FLEXIRECORDS: no AREDL level named "${r.levelName}" — skipped.`); continue; }
+    if (!member) { console.warn(`FLEXIRECORDS: "${r.player}" isn't in the clan roster — skipped.`); continue; }
+    const id = extractYouTubeIdServer(r.video);
+    const achievedAt = (id && videoDates[id]) || r.compDate; // video date preferred over ?COMPDATE
+    if (!achievedAt) { console.warn(`FLEXIRECORDS: no usable date for ${r.player} / ${r.levelName} (needs ?VIDEOLINK or ?COMPDATE) — skipped for now.`); continue; }
+    out.push({ member, level, record: { level_id: level.id, achieved_at: achievedAt, video_url: r.video || null, flexi: true } });
+  }
+  return out;
 }
 
 /* ============================================================
@@ -421,20 +555,133 @@ function parseNum(v) {
 }
 
 /* ============================================================
-   /api/unrated — reads the "UNRATED" tab of the Google Sheet
+   UNRATED — the "UNRATED" sheet tab, its own list, and an optional
+   overlay on the main list.
+   Columns: LEVELNAME | PLAYERNAME | VERIFIER (1 = this player is the
+   verifier) | CLANRANK | ?VIDEOLINK
+   - Several rows can share a level; they're grouped into one level with
+     one displayed victor (the verifier, else a "(First Victor)" row, else
+     the first row) and everyone else as following victors. A trailing
+     "(Verifier)" / "(First Victor)" in LEVELNAME is read as a hint and
+     stripped from the displayed name.
+   - CLANRANK is the position the level would hold on the main list
+     (e.g. 5 = it would be #5, pushing the levels from #5 down by one).
+     Levels without one only show on the Unrated tab.
+   - Points aren't part of the clan curve: an unrated level gets points
+     from the rated levels either side of it (the midpoint, or evenly
+     spaced if several unrated levels sit in the same gap; the very top
+     and bottom use 500 / 1 as the outer bound).
    ============================================================ */
-async function handleUnrated(env) {
-  const data = await cached(env, "unrated:v2", 300, async () => {
+function cleanUnratedName(raw) {
+  let name = String(raw ?? "").trim();
+  let verifierHint = false, firstHint = false;
+  const m = name.match(/\s*\((verifier|first victor)\)\s*$/i);
+  if (m) {
+    name = name.slice(0, m.index).trim();
+    if (/verifier/i.test(m[1])) verifierHint = true; else firstHint = true;
+  }
+  return { name, verifierHint, firstHint };
+}
+
+async function getUnratedLevelsCached(env) {
+  return cached(env, "unrated:v3", 300, async () => {
     const rows = await fetchSheetRows(env, "UNRATED");
-    // Sheet columns: LEVELNAME | PLAYERNAME
-    return rows
-      .map((row) => ({
-        name: pick(row, "levelname", "name", "level"),
-        verifier: pick(row, "playername", "player", "verifier") || "Unknown",
-      }))
-      .filter((row) => row.name);
+    const groups = new Map();
+    rows.forEach((row, index) => {
+      const { name, verifierHint, firstHint } = cleanUnratedName(pick(row, "levelname", "name", "level"));
+      const player = String(pick(row, "playername", "player") || "").trim();
+      if (!name || !player) return;
+      const key = normName(name);
+      if (!groups.has(key)) groups.set(key, { key, name, clanRank: null, sheetIndex: index, victors: [] });
+      const g = groups.get(key);
+
+      const rankRaw = pick(row, "clanrank");
+      const rank = rankRaw === "" ? NaN : Number(String(rankRaw).replace(/[^\d.\-]/g, ""));
+      if (g.clanRank == null && Number.isFinite(rank) && rank > 0) g.clanRank = rank;
+
+      const vCell = pick(row, "verifier");
+      const isVerifier = verifierHint || parseNum(vCell) > 0 || /^(true|yes|y|x|✓|✔)$/i.test(String(vCell).trim());
+      g.victors.push({ player, isVerifier, isFirst: firstHint, videoUrl: String(pick(row, "videolink", "video") || "").trim() || null });
+    });
+    return [...groups.values()];
   });
-  return json(data);
+}
+
+// One sheet group -> a card entry shaped like a list entry.
+function unratedEntry(g, countryByName) {
+  const ordered = [...g.victors].sort((a, b) => (b.isVerifier - a.isVerifier) || (b.isFirst - a.isFirst));
+  const shown = ordered[0];
+  const seen = new Set([normName(shown.player)]);
+  const following = [];
+  for (const v of ordered.slice(1)) {
+    if (seen.has(normName(v.player))) continue;
+    seen.add(normName(v.player));
+    following.push(v.player);
+  }
+  return {
+    unrated: true,
+    key: g.key,
+    rank: null,
+    name: g.name,
+    creator: "Unknown",
+    verifier: shown.player,
+    verifierCountry: countryByName.get(normName(shown.player)) ?? null,
+    points: null,
+    videoUrl: shown.videoUrl || ordered.find((v) => v.videoUrl)?.videoUrl || null,
+    achievedAt: null,
+    followingVictors: following,
+    clanRank: g.clanRank,
+    placement: null,
+    sheetIndex: g.sheetIndex,
+  };
+}
+
+// Drops the placed unrated levels into the rated list at their CLANRANK and
+// prices them from their rated neighbours. `rated` must be hardest-first and
+// already carry clan-curve points. Rated entries get a `combinedRank` too.
+async function combineWithUnrated(env, rated) {
+  const [groups, roster] = await Promise.all([getUnratedLevelsCached(env), getClanRosterCached(env)]);
+  const countryByName = new Map();
+  for (const m of roster) for (const n of [m.global_name, m.username]) if (n && !countryByName.has(normName(n))) countryByName.set(normName(n), m.country ?? null);
+
+  const unratedAll = groups.map((g) => unratedEntry(g, countryByName));
+  const placed = unratedAll
+    .filter((u) => u.clanRank != null)
+    .sort((a, b) => a.clanRank - b.clanRank || a.sheetIndex - b.sheetIndex);
+
+  const total = rated.length + placed.length;
+  const slots = new Array(total).fill(null);
+  for (const u of placed) {
+    let pos = Math.min(Math.max(Math.round(u.clanRank), 1), total) - 1;
+    while (pos < total && slots[pos]) pos++;
+    if (pos >= total) { pos = total - 1; while (pos >= 0 && slots[pos]) pos--; }
+    slots[pos] = u;
+  }
+  let ri = 0;
+  for (let i = 0; i < total; i++) if (!slots[i]) slots[i] = rated[ri++];
+
+  slots.forEach((e, i) => { e.combinedRank = i + 1; if (e.unrated) e.placement = i + 1; });
+
+  // Price each run of consecutive unrated levels between its rated neighbours.
+  for (let i = 0; i < total; ) {
+    if (!slots[i].unrated) { i++; continue; }
+    let j = i;
+    while (j + 1 < total && slots[j + 1].unrated) j++;
+    const above = i === 0 ? CLAN_POINTS_MAX : slots[i - 1].points;
+    const below = j === total - 1 ? CLAN_POINTS_MIN : slots[j + 1].points;
+    const k = j - i + 1;
+    for (let t = 1; t <= k; t++) slots[i + t - 1].points = Math.round(above + ((below - above) * t) / (k + 1));
+    i = j + 1;
+  }
+
+  const unplaced = unratedAll.filter((u) => u.clanRank == null).sort((a, b) => a.name.localeCompare(b.name));
+  return { merged: slots, unratedAll: [...placed, ...unplaced] };
+}
+
+async function handleUnrated(env) {
+  const rated = await getRatedEntries(env);
+  const { unratedAll } = await combineWithUnrated(env, rated);
+  return json(unratedAll);
 }
 
 /* ============================================================
@@ -529,7 +776,7 @@ function discordAvatarUrl(m) {
 }
 
 async function getMembersCached(env) {
-  return cached(env, "members:v8", 900, async () => {
+  return cached(env, "members:v9", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
     const clanPoints = buildClanPointsMap(byLevel);
     const statsById = buildMemberStats(byLevel, clanPoints);

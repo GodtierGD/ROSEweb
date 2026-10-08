@@ -338,6 +338,36 @@ main { padding-bottom: 96px; }
   text-overflow: ellipsis;
   min-width: 0;
 }
+.unrated-tag {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--pending);
+  border: 1px dashed var(--pending);
+  border-radius: 999px;
+  padding: 1px 8px;
+  align-self: center;
+}
+.check-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 14px;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+.check-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.check-chip input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.check-chip:has(input:checked) { color: var(--text); border-color: var(--accent); }
 .alt-rank {
   flex-shrink: 0;
   font-family: var(--font-display);

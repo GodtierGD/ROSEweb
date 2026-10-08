@@ -153,6 +153,12 @@ function assignInternalRanks(levels) {
 // the big badge this time becomes a small `altRankLabel` next to the name.
 function applyRankDisplay(level, sort) {
   const useAredl = sort === "aredl";
+  // Unrated levels have no AREDL placement: in AREDL view they show a dash.
+  if (level.unrated) {
+    return useAredl
+      ? { ...level, rank: 9999, rankText: "—", altRankLabel: `CLAN #${level.internalRank}` }
+      : { ...level, rank: level.internalRank, altRankLabel: "AREDL: unrated" };
+  }
   return {
     ...level,
     rank: useAredl ? level.rank : level.internalRank,
@@ -171,19 +177,20 @@ function levelCardHTML(level, index) {
     <div class="level-card" data-card="${index}">
       <div class="bg-layer" style="${bgStyle}"></div>
       <div class="fade-layer"></div>
-      <div class="rank ${tier}">#${level.rank}</div>
+      <div class="rank ${tier}">${level.rankText ?? `#${level.rank}`}</div>
       <div class="divider"></div>
       <div class="thumb" style="${bgStyle}"></div>
       <div class="divider"></div>
       <div class="level-meta">
         <div class="name-row">
           <div class="name">${esc(level.name)}</div>
+          ${level.unrated ? `<span class="unrated-tag" title="Not rated on AREDL yet">Unrated</span>` : ""}
           ${level.altRankLabel ? `<span class="alt-rank">${esc(level.altRankLabel)}</span>` : ""}
         </div>
         <div class="by"><b>${esc(level.verifier)}</b>${flagHTML(level.verifierCountry)}${extraVictors}</div>
       </div>
       <div class="level-side">
-        ${level.points ? `<span class="pill points">${level.points} pts</span>` : ""}
+        ${level.points ? `<span class="pill points" ${level.unrated ? `title="Estimated from the rated levels around it"` : ""}>${level.unrated ? "≈ " : ""}${level.points} pts</span>` : ""}
         ${level.videoUrl ? `<a class="watch-link" href="${esc(level.videoUrl)}" target="_blank" rel="noopener"><span>Watch</span> ▶</a>` : ""}
       </div>
     </div>
@@ -353,8 +360,9 @@ const MOCK_VIDEOS = [
 ];
 
 const MOCK_UNRATED = [
-  { name: "New Frontier", creator: "Zenthos", verifier: "Comzy", note: "Awaiting rate — submitted to mod team" },
-  { name: "Hollow Point", creator: "ryamu", verifier: "Player12", note: "Under review" },
+  { unrated: true, key: "new frontier", name: "New Frontier", verifier: "Comzy", verifierCountry: 826, followingVictors: ["Skelezavr"], points: 310, videoUrl: "#", clanRank: 2, placement: 2 },
+  { unrated: true, key: "hollow point", name: "Hollow Point", verifier: "Player12", verifierCountry: 276, followingVictors: [], points: 88, videoUrl: "#", clanRank: 6, placement: 6 },
+  { unrated: true, key: "no rank yet", name: "No Rank Yet", verifier: "Yaser", verifierCountry: 840, followingVictors: [], points: null, videoUrl: "#", clanRank: null, placement: null },
 ];
 
 const MOCK_MEMBERS = [
