@@ -126,10 +126,6 @@ img { max-width: 100%; display: block; }
   border-radius: 2px;
 }
 
-.nav-tabs a.tab-unrated { color: var(--pending); }
-.nav-tabs a.tab-unrated:hover { color: var(--text); }
-.nav-tabs a.tab-unrated.active { color: var(--text); }
-.nav-tabs a.tab-unrated.active::after { background: var(--pending); }
 
 /* "List" dropdown — groups List / Monthly / Unrated / Other under one trigger */
 .nav-dropdown { position: relative; }
@@ -183,9 +179,6 @@ img { max-width: 100%; display: block; }
 }
 .nav-dropdown-item:hover { color: var(--text); background: var(--surface-2); }
 .nav-dropdown-item.active { color: var(--text); background: var(--surface-2); }
-.nav-dropdown-item.tab-unrated { color: var(--pending); }
-.nav-dropdown-item.tab-unrated:hover,
-.nav-dropdown-item.tab-unrated.active { color: var(--text); }
 
 .nav-toggle { display: none; }
 
@@ -384,6 +377,7 @@ main { padding-bottom: 96px; }
   margin-top: 2px;
 }
 .level-meta .by b { color: var(--text); font-weight: 600; }
+.when { font-size: 12px; color: var(--text-faint); margin-left: 8px; }
 .extra-victors {
   font: inherit; font-size: 12px;
   color: var(--text-muted);

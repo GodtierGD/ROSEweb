@@ -19,7 +19,7 @@ const NAV_ITEMS = [
     group: [
       { href: "list.html", label: "List" },
       { href: "monthly.html", label: "Monthly" },
-      { href: "unrated.html", label: "Unrated", unrated: true },
+      { href: "unrated.html", label: "Unrated" },
       { href: "other.html", label: "Other" },
     ],
   },
@@ -33,7 +33,7 @@ function renderNav(activeHref) {
   if (!mount) return;
 
   const linkCls = (item) =>
-    ["", item.unrated ? "tab-unrated" : "", item.href === activeHref ? "active" : ""].filter(Boolean).join(" ").trim();
+    ["", item.href === activeHref ? "active" : ""].filter(Boolean).join(" ").trim();
 
   const tabs = NAV_ITEMS.map((item) => {
     if (!item.group) return `<a href="${item.href}" class="${linkCls(item)}">${item.label}</a>`;
@@ -41,7 +41,7 @@ function renderNav(activeHref) {
     const groupActive = item.group.some((g) => g.href === activeHref);
     const items = item.group
       .map((g) => {
-        const cls = ["nav-dropdown-item", g.unrated ? "tab-unrated" : "", g.href === activeHref ? "active" : ""]
+        const cls = ["nav-dropdown-item", g.href === activeHref ? "active" : ""]
           .filter(Boolean).join(" ").trim();
         return `<a href="${g.href}" class="${cls}">${g.label}</a>`;
       })
@@ -212,7 +212,7 @@ function levelCardHTML(level, index) {
           ${level.unrated ? `<span class="unrated-tag" title="Not rated on AREDL yet">Unrated</span>` : ""}
           ${level.altRankLabel ? `<span class="alt-rank">${esc(level.altRankLabel)}</span>` : ""}
         </div>
-        <div class="by"><b>${memberLink(level.verifier)}</b>${flagHTML(level.verifierCountry)}${extraVictors}</div>
+        <div class="by"><b>${memberLink(level.verifier)}</b>${flagHTML(level.verifierCountry)}${level.dateText ? `<span class="when">${esc(level.dateText)}</span>` : ""}${extraVictors}</div>
         ${victorList}
       </div>
       <div class="level-side">
@@ -420,3 +420,5 @@ const MOCK_OTHER = {
     { player: "Player12", level: "Windy Landscape", attempts: 37, country: 276, videoUrl: "#" },
   ],
 };
+// Fallback for the home page's "Recent completions" when the Worker isn't reachable.
+const MOCK_RECENT = MOCK_LIST.slice(0, 4).map((l, i) => ({ ...l, clanRank: i + 1, achievedAt: `2026-09-${String(20 - i * 3).padStart(2, "0")}T00:00:00Z` }));

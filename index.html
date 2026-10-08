@@ -29,18 +29,18 @@
 
 <main>
   <div class="container">
-    <section class="section-label">Recent activity</section>
-    <div id="recent-list"></div>
-
-    <section class="section-label">Jump in</section>
+    <section class="section-label" style="margin-top:0;">Navigation</section>
     <div class="card" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;">
       <p style="margin:0;color:var(--text-muted);max-width:44ch;">Unrated levels our members have beaten live on their own page, pulled straight from the clan's tracking sheet.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;">
         <a class="watch-link" href="list.html">View the List</a>
-        <a class="watch-link" href="unrated.html">See Unrated beats</a>
+        <a class="watch-link" href="unrated.html">View Unrated List</a>
         <a class="watch-link" href="#" id="discord-link">Join Discord</a>
       </div>
     </div>
+
+    <section class="section-label">Recent completions</section>
+    <div id="recent-list"></div>
 
   </div>
 </main>
@@ -56,10 +56,14 @@
   document.getElementById("discord-link").href = CONFIG.discordUrl;
 
   (async () => {
-    const data = await apiGet("/list", MOCK_LIST);
-    const recent = [...data].sort((a, b) => a.rank - b.rank).slice(0, 4);
+    // Newest individual completions by any clan member, not the hardest levels.
+    const fmt = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); };
+    const data = await apiGet("/recent?limit=4", MOCK_RECENT);
+    const recent = data.map(l => ({ ...l, rank: l.clanRank ?? l.rank, altRankLabel: `AREDL #${l.rank}`, dateText: fmt(l.achievedAt) }));
     const recentMount = document.getElementById("recent-list");
-    recentMount.innerHTML = recent.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+    recentMount.innerHTML = recent.length
+      ? recent.map((lvl, i) => levelCardHTML(lvl, i)).join("")
+      : `<div class="empty-state"><div class="title">No completions yet</div>Nothing has been logged yet.</div>`;
     hydrateThumbnails(recentMount, recent);
   })();
 </script>

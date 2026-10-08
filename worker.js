@@ -5,6 +5,7 @@
  *   GET /api/list              -> every main-list level ROSE has beaten, any member (cached)
  *                                 add ?unrated=1 to also merge in placed UNRATED-sheet levels
  *   GET /api/monthly           -> the same, grouped by achieved_at month
+ *   GET /api/recent            -> the newest individual completions by any clan member (?limit=4)
  *   GET /api/progress          -> per-player progress, from the "PROGRESS" tab of a Google Sheet
  *   GET /api/videos            -> channel upload feed (non-YouTube-API), cached
  *   GET /api/unrated           -> the "UNRATED" sheet tab as its own list (with where each would sit on the main list)
@@ -60,6 +61,7 @@ export default {
     try {
       if (pathname === "/api/list") return await handleList(env, ctx, request);
       if (pathname === "/api/monthly") return await handleMonthly(env, ctx);
+      if (pathname === "/api/recent") return await handleRecent(env, ctx, request);
       if (pathname === "/api/progress") return await handleProgress(env, ctx);
       if (pathname === "/api/videos") return await handleVideos(env, ctx);
       if (pathname === "/api/unrated") return await handleUnrated(env, ctx);
@@ -141,6 +143,51 @@ async function handleList(env, ctx, request) {
   if (!wantsUnrated) return json(rated);
   const { merged } = await combineWithUnrated(env, rated);
   return json(merged);
+}
+
+/* ============================================================
+   /api/recent — the newest individual completions by any clan member
+   (not one row per level): every member's record is its own entry,
+   newest first. Used by the home page. `rank` is the level's AREDL
+   placement and `clanRank` its place in the clan's own list.
+   ============================================================ */
+async function handleRecent(env, ctx, request) {
+  const asked = parseInt(new URL(request.url).searchParams.get("limit"), 10);
+  const limit = Math.min(Math.max(Number.isFinite(asked) ? asked : 4, 1), 20);
+  const { byLevel } = await getClanCompletionsCached(env);
+  const clanPoints = buildClanPointsMap(byLevel);
+
+  const clanRankById = new Map(
+    Object.values(byLevel)
+      .map(({ level }) => level)
+      .filter((l) => l.position != null)
+      .sort((a, b) => a.position - b.position)
+      .map((l, i) => [l.id, i + 1])
+  );
+
+  const all = [];
+  for (const { level, completions } of Object.values(byLevel)) {
+    if (level.position == null) continue;
+    for (const { member, record } of completions) {
+      const at = recordAchievedAt(record);
+      if (!at || isNaN(new Date(at))) continue; // can't be "recent" without a date
+      all.push({
+        rank: level.position,
+        clanRank: clanRankById.get(level.id) ?? null,
+        id: level.id,
+        levelId: level.level_id ?? null,
+        name: level.name,
+        verifier: member.global_name || member.username,
+        verifierCountry: member.country ?? null,
+        points: clanPoints.get(level.id) ?? null,
+        videoUrl: recordVideoUrl(record),
+        achievedAt: at,
+        followingVictors: [],
+      });
+    }
+  }
+  all.sort((a, b) => new Date(b.achievedAt) - new Date(a.achievedAt));
+  return json(all.slice(0, limit));
 }
 
 /* ============================================================
