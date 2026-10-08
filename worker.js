@@ -65,6 +65,7 @@ export default {
       if (pathname === "/api/unrated") return await handleUnrated(env, ctx);
       if (pathname === "/api/members") return await handleMembers(env, ctx, request);
       if (pathname === "/api/other") return await handleOther(env, ctx);
+      if (pathname === "/api/flexi-debug") return await handleFlexiDebug(env, request);
       return json({ error: "not found" }, 404);
     } catch (err) {
       console.error(err);
@@ -189,13 +190,18 @@ async function handleMonthly(env) {
   return json(grouped);
 }
 
+// Earliest-first ordering of completions; ones with no date sort last.
+function dateMs(c) {
+  const t = new Date(recordAchievedAt(c.record) || NaN).getTime();
+  return isNaN(t) ? Infinity : t;
+}
+const byDateAsc = (a, b) => (dateMs(a) === dateMs(b) ? 0 : dateMs(a) < dateMs(b) ? -1 : 1);
+
 // One AREDL level + its clan completions -> the shape the frontend expects.
 // Earliest achieved_at among the clan's completions is "the" verifier shown
 // on the card; everyone else becomes followingVictors.
 function levelEntryFromCompletions(level, completions, clanPoints) {
-  const sorted = [...completions].sort(
-    (a, b) => new Date(recordAchievedAt(a.record) || 0) - new Date(recordAchievedAt(b.record) || 0)
-  );
+  const sorted = [...completions].sort(byDateAsc);
   const [first, ...rest] = sorted;
   return {
     rank: level.position,
@@ -259,7 +265,7 @@ const MAX_MEMBERS_WALKED = 45; // keep total subrequests under Workers' per-requ
 // from every clan member's own profile. See the file-header comment above
 // for why this replaces the clan endpoint's first-victor-only records.
 async function getClanCompletionsCached(env) {
-  return cached(env, "completions:v2", 900, async () => {
+  return cached(env, "completions:v3", 900, async () => {
     const [roster, levels] = await Promise.all([getClanRosterCached(env), fetchAredlLevels(env)]);
     const levelById = new Map(levels.map((l) => [l.id, l]));
 
@@ -318,7 +324,7 @@ async function getClanCompletionsCached(env) {
    Completion date: the video's published date wins when there's a
    YouTube link; otherwise ?COMPDATE (D/M/Y). Needs one or the other.
    ============================================================ */
-const FLEXI_MAX_DATE_FETCHES = 5; // new YouTube lookups per refresh (keeps subrequests low); the rest resolve next refresh
+const FLEXI_MAX_DATE_FETCHES = 3; // new YouTube lookups per refresh (each may try up to 3 ways; keeps subrequests low) — the rest resolve on later refreshes
 
 const normName = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -344,30 +350,69 @@ function parseDMY(raw) {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d ? dt.toISOString() : null;
 }
 
-// YouTube has no key-free API for this, so read the watch page's metadata.
-async function fetchYouTubePublishDate(id) {
-  try {
+// YouTube has no key-free API for publish dates, so this tries three ways in
+// turn and stops at the first that works. Each reports what happened so
+// /api/flexi-debug?live=1 can show exactly why a lookup failed.
+const YT_WEB_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"; // YouTube's own public web-client key
+const YT_BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+function toIso(raw) {
+  if (!raw) return null;
+  const dt = new Date(raw);
+  return isNaN(dt) ? null : dt.toISOString();
+}
+
+// The player endpoint YouTube's own apps use; its microformat block carries the publish date.
+async function ytPlayerDate(id, client, userAgent) {
+  const res = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${YT_WEB_KEY}&prettyPrint=false`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": userAgent, "accept-language": "en-US,en;q=0.9", origin: "https://www.youtube.com" },
+    body: JSON.stringify({ context: { client }, videoId: id, contentCheckOk: true, racyCheckOk: true }),
+  });
+  if (!res.ok) return { status: res.status };
+  const j = await res.json();
+  const mf = j?.microformat?.playerMicroformatRenderer;
+  const iso = toIso(mf?.publishDate || mf?.uploadDate);
+  return { status: res.status, iso, playability: j?.playabilityStatus?.status, note: iso ? undefined : "no publish date in response" };
+}
+
+const YT_STRATEGIES = [
+  ["innertube-web", (id) => ytPlayerDate(id, { clientName: "WEB", clientVersion: "2.20250101.00.00", hl: "en", gl: "US" }, YT_BROWSER_UA)],
+  ["innertube-android", (id) => ytPlayerDate(id, { clientName: "ANDROID", clientVersion: "19.44.38", androidSdkVersion: 34, hl: "en", gl: "US" }, "com.google.android.youtube/19.44.38 (Linux; U; Android 14) gzip")],
+  ["watch-page", async (id) => {
     const res = await fetch(`https://www.youtube.com/watch?v=${id}`, {
-      headers: {
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "accept-language": "en-US,en;q=0.9",
-        cookie: "CONSENT=YES+cb; SOCS=CAI",
-      },
+      headers: { "user-agent": YT_BROWSER_UA, "accept-language": "en-US,en;q=0.9", cookie: "CONSENT=YES+cb; SOCS=CAI" },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { status: res.status };
     const html = await res.text();
     const m =
       html.match(/itemprop="datePublished"\s+content="([^"]+)"/) ||
       html.match(/content="([^"]+)"\s+itemprop="datePublished"/) ||
       html.match(/"publishDate":"([^"]+)"/) ||
       html.match(/"uploadDate":"([^"]+)"/);
-    if (!m) return null;
-    const dt = new Date(m[1]);
-    return isNaN(dt) ? null : dt.toISOString();
-  } catch (err) {
-    console.warn(`YouTube date lookup failed for ${id}:`, String(err));
-    return null;
+    const iso = toIso(m && m[1]);
+    return { status: res.status, iso, note: iso ? undefined : "no date found on page (consent/bot page?)" };
+  }],
+];
+
+async function lookupYouTubeDate(id) {
+  const tried = [];
+  for (const [strategy, run] of YT_STRATEGIES) {
+    try {
+      const { iso, ...info } = await run(id);
+      tried.push({ strategy, ...info });
+      if (iso) return { iso, via: strategy, tried };
+    } catch (err) {
+      tried.push({ strategy, error: String(err) });
+    }
   }
+  return { iso: null, via: null, tried };
+}
+
+async function fetchYouTubePublishDate(id) {
+  const r = await lookupYouTubeDate(id);
+  if (!r.iso) console.warn(`YouTube date lookup failed for ${id}:`, JSON.stringify(r.tried));
+  return r.iso;
 }
 
 // videoId -> ISO publish date, remembered in KV forever (a video's publish
@@ -381,6 +426,47 @@ async function resolveVideoDates(env, videoIds) {
   for (const [id, iso] of found) if (iso) { store[id] = iso; changed = true; }
   if (changed) await env.CACHE.put("ytdates:v1", JSON.stringify(store)).catch(() => {});
   return store;
+}
+
+// /api/flexi-debug            -> how every FLEXIRECORDS row was read (level/player matched? video id? cached date?)
+// /api/flexi-debug?live=1     -> also tries a live YouTube date lookup (up to 3 uncached videos) and shows
+//                               what each method returned — send me this if dates still won't resolve.
+async function handleFlexiDebug(env, request) {
+  const live = new URL(request.url).searchParams.get("live");
+  const [roster, levels, rows] = await Promise.all([getClanRosterCached(env), fetchAredlLevels(env), fetchSheetRows(env, "FLEXIRECORDS")]);
+  const levelNames = new Set(levels.map((l) => normName(l.name)));
+  const memberNames = new Set();
+  for (const m of roster) for (const n of [m.global_name, m.username]) if (n) memberNames.add(normName(n));
+  const store = (await env.CACHE.get("ytdates:v1", "json").catch(() => null)) || {};
+
+  const report = rows
+    .map((r) => {
+      const levelName = pick(r, "levelname", "level");
+      const player = pick(r, "playername", "player");
+      const video = String(pick(r, "videolink", "video")).trim();
+      const id = extractYouTubeIdServer(video);
+      return {
+        level: levelName, player, video,
+        levelMatchesAredl: levelNames.has(normName(levelName)),
+        playerInRoster: memberNames.has(normName(player)),
+        youtubeId: id,
+        compDate: parseDMY(pick(r, "compdate", "date")),
+        cachedVideoDate: id ? store[id] || null : null,
+      };
+    })
+    .filter((r) => r.level || r.player);
+
+  if (live) {
+    let n = 0, changed = false;
+    for (const r of report) {
+      if (!r.youtubeId || r.cachedVideoDate || n >= FLEXI_MAX_DATE_FETCHES) continue;
+      n++;
+      r.liveLookup = await lookupYouTubeDate(r.youtubeId);
+      if (r.liveLookup.iso) { store[r.youtubeId] = r.liveLookup.iso; r.cachedVideoDate = r.liveLookup.iso; changed = true; }
+    }
+    if (changed) await env.CACHE.put("ytdates:v1", JSON.stringify(store)).catch(() => {});
+  }
+  return json(report);
 }
 
 async function loadFlexiRecords(env, roster, levels) {
@@ -416,8 +502,12 @@ async function loadFlexiRecords(env, roster, levels) {
     if (!member) { console.warn(`FLEXIRECORDS: "${r.player}" isn't in the clan roster — skipped.`); continue; }
     const id = extractYouTubeIdServer(r.video);
     const achievedAt = (id && videoDates[id]) || r.compDate; // video date preferred over ?COMPDATE
-    if (!achievedAt) { console.warn(`FLEXIRECORDS: no usable date for ${r.player} / ${r.levelName} (needs ?VIDEOLINK or ?COMPDATE) — skipped for now.`); continue; }
-    out.push({ member, level, record: { level_id: level.id, achieved_at: achievedAt, video_url: r.video || null, flexi: true } });
+    if (!achievedAt && !r.video) { console.warn(`FLEXIRECORDS: ${r.player} / ${r.levelName} has neither ?VIDEOLINK nor ?COMPDATE — skipped.`); continue; }
+    // A record with a video but no readable date is still a completion: it
+    // counts on the List and Members, just not on Monthly (needs a date), and
+    // it sorts after dated completions when picking a level's first victor.
+    if (!achievedAt) console.warn(`FLEXIRECORDS: kept ${r.player} / ${r.levelName} without a date (video date lookup failed, no ?COMPDATE).`);
+    out.push({ member, level, record: { level_id: level.id, achieved_at: achievedAt || null, video_url: r.video || null, flexi: true } });
   }
   return out;
 }
@@ -699,7 +789,13 @@ async function handleUnrated(env) {
 // the exact same earliest-achieved_at ordering as /api/list, so the member
 // shown as a level's verifier there is the one credited with the first
 // victory here.
-function buildMemberStats(byLevel, clanPoints) {
+// `unrated` (optional) = Map(member id -> [priced unrated entries they've
+// beaten]) and `combinedRankById` = Map(AREDL level id -> rank on the combined
+// list). Unrated levels count as extreme completions with their estimated
+// points; "hardest" and the top list rank everything on that combined list.
+// Most recent and first victories stay rated-only: unrated levels have no
+// completion date, and "first victor" there is just whoever the sheet lists.
+function buildMemberStats(byLevel, clanPoints, unrated = new Map(), combinedRankById = new Map()) {
   const stats = new Map(); // member id -> { completions: [], firstVictories: [] }
   const get = (id) => {
     if (!stats.has(id)) stats.set(id, { completions: [], firstVictories: [] });
@@ -708,42 +804,58 @@ function buildMemberStats(byLevel, clanPoints) {
 
   for (const { level, completions } of Object.values(byLevel)) {
     if (level.position == null) continue;
-    const sorted = [...completions].sort(
-      (a, b) => new Date(recordAchievedAt(a.record) || 0) - new Date(recordAchievedAt(b.record) || 0)
-    );
+    const sorted = [...completions].sort(byDateAsc);
     sorted.forEach(({ member, record }, i) => {
       const s = get(member.id);
       s.completions.push({ level, achievedAt: recordAchievedAt(record), videoUrl: recordVideoUrl(record) });
       if (i === 0) s.firstVictories.push(level);
     });
   }
+  for (const id of unrated.keys()) get(id);
 
-  const brief = (c) => ({
+  const briefRated = (c) => ({
     id: c.level.id,
     levelId: c.level.level_id ?? null, // in-game id, for thumbnails
     name: c.level.name,
     position: c.level.position,
     points: clanPoints.get(c.level.id) ?? null,
     videoUrl: c.videoUrl || null,
+    unrated: false,
+    placement: combinedRankById.get(c.level.id) ?? null,
   });
+  const briefUnrated = (u) => ({
+    id: null,
+    levelId: null,
+    name: u.name,
+    position: null,
+    points: u.points ?? null,
+    videoUrl: u.videoUrl || null,
+    unrated: true,
+    placement: u.placement ?? null,
+  });
+  // Where a completion sits on the combined list (unplaced unrated levels last).
+  const sortKey = (b) => b.placement ?? (b.unrated ? Infinity : b.position);
 
   const out = new Map();
   for (const [id, s] of stats) {
-    const byHardest = [...s.completions].sort((a, b) => a.level.position - b.level.position);
+    const ratedBriefs = s.completions.map(briefRated);
+    const all = [...ratedBriefs, ...(unrated.get(id) || []).map(briefUnrated)].sort(
+      (a, b) => (sortKey(a) === sortKey(b) ? 0 : sortKey(a) < sortKey(b) ? -1 : 1)
+    );
     const dated = s.completions
       .filter((c) => c.achievedAt)
       .sort((a, b) => new Date(b.achievedAt) - new Date(a.achievedAt));
     out.set(id, {
-      hardest: brief(byHardest[0]),
-      extremeCount: s.completions.length,
-      mostRecent: dated[0] ? { ...brief(dated[0]), achievedAt: dated[0].achievedAt } : null,
+      hardest: all[0] ?? null,
+      extremeCount: all.length,
+      mostRecent: dated[0] ? { ...briefRated(dated[0]), achievedAt: dated[0].achievedAt } : null,
       firstVictories: {
         count: s.firstVictories.length,
         levels: s.firstVictories
           .sort((a, b) => a.position - b.position)
           .map((l) => ({ name: l.name, position: l.position })),
       },
-      top: byHardest.slice(0, 5).map(brief),
+      top: all.slice(0, 5),
     });
   }
   return out;
@@ -776,10 +888,35 @@ function discordAvatarUrl(m) {
 }
 
 async function getMembersCached(env) {
-  return cached(env, "members:v9", 900, async () => {
+  return cached(env, "members:v11", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
     const clanPoints = buildClanPointsMap(byLevel);
-    const statsById = buildMemberStats(byLevel, clanPoints);
+
+    // Unrated levels (UNRATED sheet tab) count as extreme completions for every
+    // player listed on them, worth their estimated points (the midpoint of the
+    // rated levels around them). A level without a CLANRANK yet counts as a
+    // completion but is worth 0 points until it's given one.
+    const unratedByMember = new Map(); // member id -> [priced unrated entries]
+    const combinedRankById = new Map();
+    try {
+      const rated = await getRatedEntries(env);
+      const { unratedAll } = await combineWithUnrated(env, rated);
+      for (const r of rated) combinedRankById.set(r.id, r.combinedRank);
+      const memberByName = new Map();
+      for (const m of members) for (const n of [m.global_name, m.username]) if (n && !memberByName.has(normName(n))) memberByName.set(normName(n), m);
+      for (const u of unratedAll) {
+        for (const name of [u.verifier, ...u.followingVictors]) {
+          const m = memberByName.get(normName(name));
+          if (!m) continue;
+          if (!unratedByMember.has(m.id)) unratedByMember.set(m.id, []);
+          unratedByMember.get(m.id).push(u);
+        }
+      }
+    } catch (err) {
+      console.warn("Unrated levels not included in members (UNRATED tab unreadable):", String(err));
+    }
+
+    const statsById = buildMemberStats(byLevel, clanPoints, unratedByMember, combinedRankById);
 
     const pointsById = new Map();
     for (const { level, completions } of Object.values(byLevel)) {
@@ -788,6 +925,9 @@ async function getMembersCached(env) {
       for (const { member } of completions) {
         pointsById.set(member.id, (pointsById.get(member.id) || 0) + pts);
       }
+    }
+    for (const [id, list] of unratedByMember) {
+      for (const u of list) pointsById.set(id, (pointsById.get(id) || 0) + (u.points || 0));
     }
 
     const result = members.map((m) => ({

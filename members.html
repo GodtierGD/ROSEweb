@@ -88,7 +88,7 @@
     const fv = st.firstVictories || { count: 0, levels: [] };
     return `
       <div class="stat-grid">
-        ${tile("Hardest completion", st.hardest.name, `AREDL #${st.hardest.position}`)}
+        ${tile("Hardest completion", st.hardest.name, st.hardest.unrated ? `Unrated${st.hardest.placement ? " · CLAN #" + st.hardest.placement : ""}` : `AREDL #${st.hardest.position}`)}
         ${tile("Extreme demons", String(st.extremeCount), "completed")}
         ${tile("Most recent", st.mostRecent ? st.mostRecent.name : "—", st.mostRecent ? fmtDate(st.mostRecent.achievedAt) : "")}
         ${tile("First victor of", String(fv.count), "levels in the clan")}
@@ -101,7 +101,7 @@
         <div>
           <h4>Top completions</h4>
           <ol class="top-list">
-            ${st.top.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span><span class="meta">AREDL #${t.position}${t.points != null ? ` · ${t.points} pts` : ""}</span></li>`).join("")}
+            ${st.top.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span><span class="meta">${t.unrated ? "Unrated" : "AREDL #" + t.position}${t.points != null ? ` · ${t.unrated ? "≈ " : ""}${t.points} pts` : ""}</span></li>`).join("")}
           </ol>
         </div>
       </div>`;
