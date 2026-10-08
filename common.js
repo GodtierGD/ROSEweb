@@ -214,6 +214,7 @@ function levelCardHTML(level, index) {
         </div>
         <div class="by"><b>${memberLink(level.verifier)}</b>${flagHTML(level.verifierCountry)}${level.dateText ? `<span class="when">${esc(level.dateText)}</span>` : ""}${extraVictors}</div>
         ${victorList}
+        ${level.extraHTML ?? ""}
       </div>
       <div class="level-side">
         ${level.points ? `<span class="pill points" ${level.unrated ? `title="Estimated from the rated levels around it"` : ""}>${level.unrated ? "≈ " : ""}${level.points} pts</span>` : ""}
@@ -355,28 +356,11 @@ const MOCK_MONTHLY = {
 };
 
 const MOCK_PROGRESS = [
-  {
-    player: "Skelezavr",
-    entries: [
-      { level: "Acheron", pct: 100, status: "Completed", runs: [] },
-      { level: "Avernus", pct: 87, status: "In progress", runs: [{ start: 60, end: 95, kind: "run" }] },
-      { level: "Kyouki", pct: 62, status: "In progress", runs: [{ start: 85, end: 100, kind: "finish" }] },
-    ],
-  },
-  {
-    player: "Sterling",
-    entries: [
-      { level: "Zodiac", pct: 0, status: "In progress", runs: [{ start: 40, end: 75, kind: "run" }, { start: 90, end: 100, kind: "finish" }] },
-    ],
-  },
-  {
-    player: "Comzy",
-    entries: [
-      { level: "Kyouki", pct: 100, status: "Completed", runs: [] },
-      { level: "Firework", pct: 100, status: "Completed", runs: [] },
-      { level: "Silent Clubstep", pct: 41, status: "In progress", runs: [] },
-    ],
-  },
+  { progress: true, rank: 3, rankKnown: true, name: "Acheron", verifier: "Skelezavr", verifierCountry: 643, followingVictors: [], points: null, videoUrl: null, pct: 100, runs: [] },
+  { progress: true, rank: 14, rankKnown: true, name: "Avernus", verifier: "Skelezavr", verifierCountry: 643, followingVictors: [], points: null, videoUrl: null, pct: 62, runs: [{ start: 30, end: 55, kind: "run" }, { start: 85, end: 100, kind: "finish" }] },
+  { progress: true, rank: 14, rankKnown: true, name: "Avernus", verifier: "Comzy", verifierCountry: 826, followingVictors: [], points: null, videoUrl: null, pct: 41, runs: [] },
+  { progress: true, rank: 21, rankKnown: true, name: "Kyouki", verifier: "Sterling", verifierCountry: 826, followingVictors: [], points: null, videoUrl: null, pct: null, runs: [{ start: 40, end: 75, kind: "run" }, { start: 90, end: 100, kind: "finish" }] },
+  { progress: true, rank: 9999, rankKnown: false, unrated: true, name: "New Frontier", verifier: "Comzy", verifierCountry: 826, followingVictors: [], points: null, videoUrl: null, pct: 18, runs: [] },
 ];
 
 const MOCK_VIDEOS = [

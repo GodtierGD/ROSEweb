@@ -559,14 +559,10 @@ async function loadFlexiRecords(env, roster, levels) {
   return out;
 }
 
-/* ============================================================
-   /api/progress — from the "PROGRESS" tab of the Google Sheet
-   ============================================================ */
-// "40-85, 60-100" -> [{start:40,end:85}, {start:60,end:100}]. Each gets a
-// `kind` so the frontend can prioritize overlaps: a run reaching 100% is a
-// "finish" (proven they can close it out from that point), anything else is
-// a plain practice "run". The 0->FROMZERO range is handled separately and
-// always wins over both when drawing overlaps.
+// "40-85, 60-100" -> [{start:40,end:85,kind:"run"}, {start:60,end:100,kind:"finish"}].
+// A run reaching 100% is a "finish" (proof they can close the level out from
+// that point) and is drawn on the progress bar; any other range is a plain
+// "run", listed under the bar instead.
 function parseRuns(raw) {
   if (!raw) return [];
   return String(raw)
@@ -582,32 +578,113 @@ function parseRuns(raw) {
     .filter(Boolean);
 }
 
+// Name -> compact AREDL level info (id, in-game id, position), kept in KV for
+// an hour so the Progress page can find a level's difficulty and thumbnail
+// without pulling the whole level list on every refresh.
+async function getLevelIndexCached(env) {
+  return cached(env, "level-index:v1", 3600, async () => {
+    const levels = await fetchAredlLevels(env);
+    return levels.map((l) => ({ id: l.id, levelId: l.level_id ?? null, name: l.name, position: l.position ?? null }));
+  });
+}
+
+// Rough AREDL position for each UNRATED-sheet level, so progress on an
+// unrated level can be sorted by difficulty with everything else: the midpoint
+// of the AREDL positions of the rated levels either side of it on the clan's
+// combined list. Unplaced levels (no CLANRANK) map to null.
+async function estimateUnratedPositions(env) {
+  const rated = await getRatedEntries(env);
+  const { merged, unratedAll } = await combineWithUnrated(env, rated);
+  const map = new Map();
+  for (const u of unratedAll) {
+    let est = null;
+    if (u.placement != null) {
+      const i = u.placement - 1;
+      let above = null, below = null;
+      for (let a = i - 1; a >= 0; a--) if (!merged[a].unrated) { above = merged[a].rank; break; }
+      for (let b = i + 1; b < merged.length; b++) if (!merged[b].unrated) { below = merged[b].rank; break; }
+      est = above != null && below != null ? (above + below) / 2 : above != null ? above + 0.5 : below != null ? below - 0.5 : null;
+    }
+    map.set(u.key, { est, name: u.name });
+  }
+  return map;
+}
+
+/* ============================================================
+   /api/progress — the "PROGRESS" sheet tab as a difficulty-ordered list
+   Columns: LEVELNAME | PLAYERNAME | FROMZERO (percent) | RUNS ("40-85, 90-100")
+   One entry per (level, player), hardest level first; several players can
+   have progress on the same level and are listed separately, most progress
+   from zero first. A blank FROMZERO / RUNS stays blank (null / []) so the
+   page draws nothing for it. No points are awarded for progress.
+   ============================================================ */
 async function handleProgress(env) {
-  const rows = await cached(env, "progress:v3", 300, async () => {
+  const rows = await cached(env, "progress:v4", 300, async () => {
     const raw = await fetchSheetRows(env, "PROGRESS");
-    // Sheet columns: LEVELNAME | PLAYERNAME | FROMZERO (percent, 0-100) | RUNS (optional, "40-85, 60-100")
     return raw
       .map((row) => {
-        const pct = Math.max(0, Math.min(100, parseNum(pick(row, "fromzero", "pct", "progress", "percent"))));
+        const rawPct = pick(row, "fromzero", "pct", "progress", "percent");
         return {
-          player: pick(row, "playername", "player"),
-          level: pick(row, "levelname", "level"),
-          pct,
-          status: pick(row, "status") || (pct >= 100 ? "Completed" : "In progress"),
+          player: String(pick(row, "playername", "player") || "").trim(),
+          level: String(pick(row, "levelname", "level") || "").trim(),
+          pct: rawPct === "" ? null : Math.max(0, Math.min(100, parseNum(rawPct))),
           runs: parseRuns(pick(row, "runs")),
         };
       })
-      .filter((row) => row.player && row.level);
+      .filter((r) => r.player && r.level);
   });
 
-  const byPlayer = {};
-  for (const row of rows) {
-    byPlayer[row.player] = byPlayer[row.player] || { player: row.player, entries: [] };
-    byPlayer[row.player].entries.push({ level: row.level, pct: row.pct, status: row.status, runs: row.runs });
+  // Same player twice on one level -> one entry (best from-zero, all runs).
+  const merged = new Map();
+  for (const r of rows) {
+    const key = `${normName(r.level)}|${normName(r.player)}`;
+    const cur = merged.get(key);
+    if (!cur) { merged.set(key, { ...r, runs: [...r.runs] }); continue; }
+    if (r.pct != null && (cur.pct == null || r.pct > cur.pct)) cur.pct = r.pct;
+    cur.runs.push(...r.runs);
   }
-  // Highest progress first within each player.
-  Object.values(byPlayer).forEach((p) => p.entries.sort((a, b) => b.pct - a.pct));
-  return json(Object.values(byPlayer));
+
+  const [index, roster] = await Promise.all([getLevelIndexCached(env), getClanRosterCached(env).catch(() => [])]);
+  const byName = new Map(index.map((l) => [normName(l.name), l]));
+  const countryByName = new Map();
+  for (const m of roster) for (const n of [m.global_name, m.username]) if (n && !countryByName.has(normName(n))) countryByName.set(normName(n), m.country ?? null);
+
+  let unratedPos = null;
+  if ([...merged.values()].some((r) => !byName.has(normName(r.level)))) {
+    try { unratedPos = await estimateUnratedPositions(env); } catch (err) { console.warn("Couldn't place unrated progress levels:", String(err)); }
+  }
+
+  const entries = [...merged.values()].map((r) => {
+    const key = normName(r.level);
+    const lvl = byName.get(key);
+    const un = !lvl && unratedPos ? unratedPos.get(key) : null;
+    const known = lvl ? lvl.position != null : false;
+    return {
+      progress: true,
+      rank: lvl ? lvl.position ?? 9999 : un && un.est != null ? un.est : 9999,
+      rankKnown: known,
+      id: lvl ? lvl.id : null,
+      levelId: lvl ? lvl.levelId : null,
+      name: lvl ? lvl.name : un ? un.name : r.level,
+      unrated: !!un,
+      verifier: r.player,
+      verifierCountry: countryByName.get(normName(r.player)) ?? null,
+      followingVictors: [],
+      points: null,
+      videoUrl: null,
+      pct: r.pct,
+      runs: r.runs,
+    };
+  });
+
+  entries.sort(
+    (a, b) =>
+      a.rank - b.rank ||
+      a.name.localeCompare(b.name) ||
+      (b.pct ?? -1) - (a.pct ?? -1) ||
+      a.verifier.localeCompare(b.verifier)
+  );
+  return json(entries);
 }
 
 /* ============================================================

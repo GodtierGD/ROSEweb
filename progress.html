@@ -14,34 +14,29 @@
 <meta name="theme-color" content="#ff3b52">
 <link rel="stylesheet" href="style.css">
 <style>
-  .player-block { margin-bottom: 30px; }
-  .player-block .head { display:flex; align-items:baseline; gap:10px; margin-bottom:12px; }
-  .player-block .head .name { font-family:var(--font-display); font-weight:700; font-size:20px; font-style:italic; }
-  .prog-row { display:flex; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid var(--border); }
-  .prog-row:last-child { border-bottom:none; }
-  .prog-row .lvl { width:170px; flex-shrink:0; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  /* Track holds every segment absolutely positioned by percent, so FROMZERO,
-     a "finish" run (reaches 100%), and plain practice runs can all overlap
-     on the same bar. Stacking order below = visual priority on overlap. */
-  .prog-track { position:relative; flex:1; height:22px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+  /* Progress bar, drawn inside a level card's details. Segments are placed by
+     percent; FROMZERO (green) sits above a run that reaches 100% (amber) where
+     they overlap. A blank field simply draws no segment. */
+  .prog-track { position:relative; width:100%; height:22px; margin-top:10px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
   .prog-seg {
     position:absolute; top:0; bottom:0;
     display:flex; align-items:center; justify-content:center;
-    font-family:var(--font-display); font-weight:700; font-size:11px; color:#0b0a0e;
+    font-family:var(--font-display); font-weight:700; font-style:normal; font-size:11px; color:#0b0a0e;
     white-space:nowrap; overflow:hidden;
   }
-  .prog-seg.run    { z-index:1; background:linear-gradient(90deg, var(--accent-3), var(--accent)); color:#fff; }
   .prog-seg.finish { z-index:2; background:var(--accent-2); }
   .prog-seg.zero   { z-index:3; background:var(--accent-green); border-radius:999px 0 0 999px; }
-  /* For a segment too narrow to hold its own label legibly, the label is
-     drawn just outside its right edge instead of centered inside it. */
+  /* A segment too narrow to hold its label gets it drawn just outside its right edge. */
   .prog-seg-label.outside {
     position:absolute; top:0; bottom:0; z-index:4;
     display:flex; align-items:center;
-    font-family:var(--font-display); font-weight:700; font-size:11px; color:var(--text-muted);
+    font-family:var(--font-display); font-weight:700; font-style:normal; font-size:11px; color:var(--text-muted);
     white-space:nowrap;
   }
-  .prog-row .status { width:110px; text-align:right; font-size:12px; color:var(--text-faint); flex-shrink:0; }
+  /* Smaller runs between the from-zero and %-100 runs, listed under the bar. */
+  .run-list { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+  .run-label { font-family:var(--font-display); font-weight:600; font-style:normal; font-size:12px; color:var(--text-faint); margin-right:2px; }
+  .run-chip { font-family:var(--font-display); font-weight:600; font-style:normal; font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--border-strong); background:rgba(21,18,25,0.7); color:var(--text-muted); }
 </style>
 </head>
 <body>
@@ -51,7 +46,7 @@
   <div class="page-head">
     <div class="eyebrow">Works in progress</div>
     <h1>Progress</h1>
-    <p>What each clan member is currently grinding, and how far they've gotten. Anything at 100% has been fully completed.</p>
+    <p>What clan members are currently grinding, hardest level first. Several people can be working on the same level — each is listed separately, with the most progress from zero on top. No points are awarded for progress.</p>
   </div>
 </header>
 
@@ -82,43 +77,42 @@
     return seg + outsideLabel;
   }
 
-  // Stacking order (by CSS z-index, .prog-seg.{run,finish,zero}): plain
-  // practice runs sit lowest, a run that reaches 100% ("finish") sits above
-  // those, and the FROMZERO range always sits on top of everything — so
-  // where ranges overlap, zero wins over finish, and finish wins over a
-  // plain run, matching the priority the clan asked for.
+  // The bar shows the FROMZERO range (green) and any run that reaches 100%
+  // (amber); green is stacked on top where they overlap. A blank FROMZERO or
+  // no 100% run just means that segment isn't drawn.
   function trackHTML(e) {
-    const runs = e.runs || [];
+    const finish = (e.runs || []).filter(r => r.kind === "finish");
     const segs = [
-      ...runs.filter(r => r.kind === "run").map(r => segmentHTML(r.start, r.end, "run", `${r.start}–${r.end}%`)),
-      ...runs.filter(r => r.kind === "finish").map(r => segmentHTML(r.start, 100, "finish", `${r.start}–100%`)),
-      segmentHTML(0, e.pct, "zero", `${e.pct}%`),
+      ...finish.map(r => segmentHTML(r.start, 100, "finish", `${r.start}–100%`)),
+      ...(e.pct != null ? [segmentHTML(0, e.pct, "zero", `${e.pct}%`)] : []),
     ];
     return `<div class="prog-track">${segs.join("")}</div>`;
   }
 
-  function playerBlockHTML(p) {
-    const rows = p.entries.map(e => `
-      <div class="prog-row">
-        <div class="lvl">${esc(e.level)}</div>
-        ${trackHTML(e)}
-        <div class="status">${esc(e.status)}</div>
-      </div>
-    `).join("");
-    return `
-      <div class="player-block card">
-        <div class="head"><span class="name">${memberLink(p.player)}</span></div>
-        ${rows}
-      </div>
-    `;
+  // Everything in between (neither from zero nor reaching 100%) is listed under the bar.
+  function runListHTML(e) {
+    const mid = (e.runs || []).filter(r => r.kind === "run");
+    return mid.length
+      ? `<div class="run-list"><span class="run-label">Runs</span>${mid.map(r => `<span class="run-chip">${r.start}–${r.end}%</span>`).join("")}</div>`
+      : "";
   }
 
   (async () => {
-    const data = await apiGet("/progress", MOCK_PROGRESS);
+    const entries = await apiGet("/progress", MOCK_PROGRESS);
     const mount = document.getElementById("progress-mount");
-    mount.innerHTML = data.length
-      ? data.map(playerBlockHTML).join("")
-      : `<div class="empty-state"><div class="title">No progress logged</div>Nothing tracked yet.</div>`;
+    if (!entries.length) {
+      mount.innerHTML = `<div class="empty-state"><div class="title">No progress logged</div>Nothing tracked yet.</div>`;
+      return;
+    }
+    // One card per level + player, already ordered hardest level first and,
+    // within a level, most progress from zero first (the Worker does this).
+    const display = entries.map(e => ({
+      ...e,
+      rankText: e.rankKnown ? undefined : "—",
+      extraHTML: trackHTML(e) + runListHTML(e),
+    }));
+    mount.innerHTML = display.map((lvl, i) => levelCardHTML(lvl, i)).join("");
+    hydrateThumbnails(mount, display);
   })();
 </script>
 </body>
