@@ -140,7 +140,13 @@ function flagHTML(num) {
 // sort — and regardless of which page is asking, since it's always derived
 // the same way from the same underlying `rank` (AREDL placement).
 function assignInternalRanks(levels) {
-  [...levels].sort((a, b) => a.rank - b.rank).forEach((lvl, i) => { lvl.internalRank = i + 1; });
+  // The same level can appear more than once (Monthly lists a level in every
+  // month it was beaten), so rank unique levels and give every copy that rank.
+  const keyOf = (l) => l.id ?? `${l.rank}:${l.name}`;
+  const unique = new Map();
+  for (const l of levels) if (!unique.has(keyOf(l))) unique.set(keyOf(l), l.rank);
+  const rankOf = new Map([...unique].sort((a, b) => a[1] - b[1]).map(([k], i) => [k, i + 1]));
+  levels.forEach((l) => { l.internalRank = rankOf.get(keyOf(l)); });
 }
 
 // Maps a level for display under a given sort mode: whichever number isn't

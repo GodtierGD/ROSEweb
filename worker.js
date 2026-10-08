@@ -134,24 +134,49 @@ async function handleList(env) {
 }
 
 /* ============================================================
-   /api/monthly — the same completions, grouped by the month each
-   level was first achieved by the clan (AREDL's achieved_at).
+   /api/monthly — calculated independently per month, NOT from the
+   all-time list. For each month, every completion achieved in that
+   month is grouped by level; the earliest one that month is that
+   month's first victor (shown on the card) and anyone else who beat
+   the same level the same month becomes a following victor. So a
+   level already beaten in an earlier month can still have a fresh
+   "first victor of the month" later, and a level can appear in more
+   than one month. Points still come from the clan-wide curve (a
+   level is worth the same wherever it shows up).
    ============================================================ */
 async function handleMonthly(env) {
   const { byLevel } = await getClanCompletionsCached(env);
   const clanPoints = buildClanPointsMap(byLevel);
-  const entries = Object.values(byLevel)
-    .filter(({ level }) => level.position != null)
-    .map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints))
-    .filter((e) => e.achievedAt);
+  const monthLabel = (iso) => new Date(iso).toLocaleString("en-US", { month: "long", year: "numeric" });
 
-  const sorted = entries.sort((a, b) => new Date(b.achievedAt) - new Date(a.achievedAt));
-  const grouped = {};
-  for (const e of sorted) {
-    const label = new Date(e.achievedAt).toLocaleString("en-US", { month: "long", year: "numeric" });
-    (grouped[label] ||= []).push(e);
+  // month label -> [{ level, completions: [only that month's completions] }]
+  const months = new Map();
+  for (const { level, completions } of Object.values(byLevel)) {
+    if (level.position == null) continue;
+    const perMonth = new Map();
+    for (const c of completions) {
+      const at = recordAchievedAt(c.record);
+      if (!at || isNaN(new Date(at))) continue; // can't place it in a month
+      const label = monthLabel(at);
+      if (!perMonth.has(label)) perMonth.set(label, []);
+      perMonth.get(label).push(c);
+    }
+    for (const [label, monthCompletions] of perMonth) {
+      if (!months.has(label)) months.set(label, []);
+      months.get(label).push({ level, completions: monthCompletions });
+    }
   }
-  for (const label in grouped) grouped[label].sort((a, b) => a.rank - b.rank);
+
+  // Newest month first; within a month, hardest level first.
+  const grouped = {};
+  const entriesByMonth = [...months].map(([label, items]) => ({
+    label,
+    entries: items
+      .map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints))
+      .sort((a, b) => a.rank - b.rank),
+  }));
+  entriesByMonth.sort((a, b) => new Date(b.entries[0].achievedAt) - new Date(a.entries[0].achievedAt));
+  for (const { label, entries } of entriesByMonth) grouped[label] = entries;
   return json(grouped);
 }
 
