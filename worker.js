@@ -842,6 +842,8 @@ function unratedEntry(g, countryByName) {
     verifierCountry: countryByName.get(normName(shown.player)) ?? null,
     points: null,
     videoUrl: shown.videoUrl || ordered.find((v) => v.videoUrl)?.videoUrl || null,
+    // each victor's own video, so a member's profile can link THEIR completion
+    victorVideos: Object.fromEntries(g.victors.filter((v) => v.videoUrl).map((v) => [normName(v.player), v.videoUrl])),
     achievedAt: null,
     followingVictors: following,
     clanRank: g.clanRank,
@@ -1012,7 +1014,7 @@ function discordAvatarUrl(m) {
 }
 
 async function getMembersCached(env) {
-  return cached(env, "members:v12", 900, async () => {
+  return cached(env, "members:v13", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
     const clanPoints = buildClanPointsMap(byLevel);
 
@@ -1033,7 +1035,8 @@ async function getMembersCached(env) {
           const m = memberByName.get(normName(name));
           if (!m) continue;
           if (!unratedByMember.has(m.id)) unratedByMember.set(m.id, []);
-          unratedByMember.get(m.id).push(u);
+          // a per-member copy carrying THIS member's video (not the displayed victor's)
+          unratedByMember.get(m.id).push({ ...u, videoUrl: u.victorVideos?.[normName(name)] ?? null });
         }
       }
     } catch (err) {

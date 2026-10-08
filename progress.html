@@ -34,8 +34,16 @@
     white-space:nowrap;
   }
   /* Smaller runs between the from-zero and %-100 runs, listed under the bar. */
-  .run-list { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
-  .run-label { font-family:var(--font-display); font-weight:600; font-style:normal; font-size:12px; color:var(--text-faint); margin-right:2px; }
+  .runs-toggle {
+    margin-top:8px; padding:3px 4px; background:none; border:none; border-bottom:1px dotted var(--text-faint);
+    font-family:var(--font-display); font-weight:600; font-style:normal; font-size:12px;
+    color:var(--text-muted); cursor:pointer;
+  }
+  .runs-toggle:hover, .runs-toggle.open { color:var(--text); border-bottom-color:var(--text-muted); }
+  .runs-toggle .caret { display:inline-block; font-size:9px; transition:transform 0.15s ease; }
+  .runs-toggle.open .caret { transform:rotate(180deg); }
+  .run-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .run-list[hidden] { display:none; }
   .run-chip { font-family:var(--font-display); font-weight:600; font-style:normal; font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid var(--border-strong); background:rgba(21,18,25,0.7); color:var(--text-muted); }
 </style>
 </head>
@@ -89,13 +97,24 @@
     return `<div class="prog-track">${segs.join("")}</div>`;
   }
 
-  // Everything in between (neither from zero nor reaching 100%) is listed under the bar.
+  // Everything in between (neither from zero nor reaching 100%) sits in a
+  // dropdown under the bar: tap "Runs" to show the ranges.
   function runListHTML(e) {
     const mid = (e.runs || []).filter(r => r.kind === "run");
     return mid.length
-      ? `<div class="run-list"><span class="run-label">Runs</span>${mid.map(r => `<span class="run-chip">${r.start}–${r.end}%</span>`).join("")}</div>`
+      ? `<div class="runs"><button type="button" class="runs-toggle" aria-expanded="false">Runs (${mid.length}) <span class="caret">&#9662;</span></button><div class="run-list" hidden>${mid.map(r => `<span class="run-chip">${r.start}–${r.end}%</span>`).join("")}</div></div>`
       : "";
   }
+
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".runs-toggle");
+    if (!btn) return;
+    const list = btn.parentElement.querySelector(".run-list");
+    const opening = list.hidden;
+    list.hidden = !opening;
+    btn.setAttribute("aria-expanded", String(opening));
+    btn.classList.toggle("open", opening);
+  });
 
   (async () => {
     const entries = await apiGet("/progress", MOCK_PROGRESS);
