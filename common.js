@@ -166,12 +166,37 @@ function applyRankDisplay(level, sort) {
   };
 }
 
+// A player's name as a link to their profile: the Members page, opened with
+// that member's dropdown already expanded (members.html reads ?member=).
+function memberLink(name) {
+  return `<a class="member-link" href="members.html?member=${encodeURIComponent(name)}">${esc(name)}</a>`;
+}
+
+// Expand/collapse the "+N victors" list on any level card (delegated, so it
+// keeps working when a page re-renders its cards).
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".extra-victors");
+  if (!btn) return;
+  const list = btn.closest(".level-meta") && btn.closest(".level-meta").querySelector(".victor-list");
+  if (!list) return;
+  const open = list.hidden; // currently closed -> opening
+  list.hidden = !open;
+  btn.setAttribute("aria-expanded", String(open));
+  btn.classList.toggle("open", open);
+});
+
 function levelCardHTML(level, index) {
   const tier = tierClass(level.rank);
   const bgStyle = level.bg ? `background-image:url('${level.bg}');background-size:cover;background-position:center;` : `background:${fallbackGradient(index)};`;
   const extraCount = level.followingVictors ? level.followingVictors.length : 0;
+  // "+N victors" is a button that expands a list of everyone else who beat the
+  // level (tap/click works on mobile, unlike a hover tooltip). See the click
+  // handler below the card helpers.
   const extraVictors = extraCount
-    ? `<span class="extra-victors" title="${esc(level.followingVictors.join(", "))}">+${extraCount} victor${extraCount === 1 ? "" : "s"}</span>`
+    ? `<button type="button" class="extra-victors" aria-expanded="false">+${extraCount} victor${extraCount === 1 ? "" : "s"} <span class="caret">&#9662;</span></button>`
+    : "";
+  const victorList = extraCount
+    ? `<div class="victor-list" hidden>${level.followingVictors.map((v) => `<span class="victor-chip">${memberLink(v)}</span>`).join("")}</div>`
     : "";
   return `
     <div class="level-card" data-card="${index}">
@@ -187,7 +212,8 @@ function levelCardHTML(level, index) {
           ${level.unrated ? `<span class="unrated-tag" title="Not rated on AREDL yet">Unrated</span>` : ""}
           ${level.altRankLabel ? `<span class="alt-rank">${esc(level.altRankLabel)}</span>` : ""}
         </div>
-        <div class="by"><b>${esc(level.verifier)}</b>${flagHTML(level.verifierCountry)}${extraVictors}</div>
+        <div class="by"><b>${memberLink(level.verifier)}</b>${flagHTML(level.verifierCountry)}${extraVictors}</div>
+        ${victorList}
       </div>
       <div class="level-side">
         ${level.points ? `<span class="pill points" ${level.unrated ? `title="Estimated from the rated levels around it"` : ""}>${level.unrated ? "≈ " : ""}${level.points} pts</span>` : ""}
@@ -373,13 +399,13 @@ const MOCK_MEMBERS = [
       extremeCount: 4,
       mostRecent: { name: "Kyouki", position: 21, points: 60, achievedAt: "2026-09-14T00:00:00Z" },
       firstVictories: { count: 2, levels: [{ name: "Acheron", position: 3 }, { name: "Avernus", position: 14 }] },
-      top: [
+      completions: [
         { name: "Acheron", position: 3, points: 420 }, { name: "Avernus", position: 14, points: 160 },
         { name: "Kyouki", position: 21, points: 60 }, { name: "Firework", position: 37, points: 12 },
       ],
     },
   },
-  { rank: 2, name: "Comzy", points: 2874.1, country: 826, youtube: "#", stats: { hardest: null, extremeCount: 0, mostRecent: null, firstVictories: { count: 0, levels: [] }, top: [] } },
+  { rank: 2, name: "Comzy", points: 2874.1, country: 826, youtube: "#", stats: { hardest: null, extremeCount: 0, mostRecent: null, firstVictories: { count: 0, levels: [] }, completions: [] } },
   { rank: 3, name: "Yaser", points: 1990.8, country: 840, youtube: null },
   { rank: 4, name: "Player12", points: 842.3, country: 276, youtube: null },
 ];

@@ -36,6 +36,7 @@
   .chips { display:flex; flex-wrap:wrap; gap:6px; max-height:150px; overflow:auto; }
   .chip { font-size:12px; padding:4px 10px; border-radius:999px; border:1px solid var(--border-strong); background:var(--surface); white-space:nowrap; }
   .chip b { color:var(--accent); font-family:var(--font-display); margin-right:4px; }
+  .comp-scroll { max-height:320px; overflow-y:auto; padding-right:6px; }
   .top-list { list-style:none; margin:0; padding:0; }
   .top-list li { display:flex; align-items:baseline; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); font-size:14px; }
   .top-list li:last-child { border-bottom:none; }
@@ -86,6 +87,7 @@
     if (!st || !st.extremeCount) return `<div class="none">No list completions yet.</div>`;
     const tile = (k, v, sub) => `<div class="stat-tile"><div class="k">${k}</div><div class="v" title="${esc(v)}">${esc(v)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>`;
     const fv = st.firstVictories || { count: 0, levels: [] };
+    const comps = st.completions || st.top || [];
     return `
       <div class="stat-grid">
         ${tile("Hardest completion", st.hardest.name, st.hardest.unrated ? `Unrated${st.hardest.placement ? " · CLAN #" + st.hardest.placement : ""}` : `AREDL #${st.hardest.position}`)}
@@ -99,10 +101,12 @@
           ${fv.count ? `<div class="chips">${fv.levels.map(l => `<span class="chip"><b>#${l.position}</b>${esc(l.name)}</span>`).join("")}</div>` : `<div class="none">None yet.</div>`}
         </div>
         <div>
-          <h4>Top completions</h4>
-          <ol class="top-list">
-            ${st.top.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span><span class="meta">${t.unrated ? "Unrated" : "AREDL #" + t.position}${t.points != null ? ` · ${t.unrated ? "≈ " : ""}${t.points} pts` : ""}</span></li>`).join("")}
-          </ol>
+          <h4>All completions (${comps.length})</h4>
+          <div class="comp-scroll">
+            <ol class="top-list">
+              ${comps.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${esc(t.name)}</span><span class="meta">${t.unrated ? "Unrated" : "AREDL #" + t.position}${t.points != null ? ` · ${t.unrated ? "≈ " : ""}${t.points} pts` : ""}</span></li>`).join("")}
+            </ol>
+          </div>
         </div>
       </div>`;
   }
@@ -116,7 +120,7 @@
       ? `<img class="m-avatar" src="${esc(m.avatar)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.outerHTML='<div class=&quot;m-avatar fallback&quot;>${initial}</div>'">`
       : `<div class="m-avatar fallback">${initial}</div>`;
     return `
-      <div class="member-card" data-card="${i}">
+      <div class="member-card" data-card="${i}" data-name="${esc((m.name || "").toLowerCase().trim())}">
         <div class="bg-layer" style="background:${fallbackGradient(i)};"></div>
         <div class="fade-layer"></div>
         <div class="member-row" role="button" tabindex="0" aria-expanded="false">
@@ -158,6 +162,20 @@
       const row = e.target.closest(".member-row");
       if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggle(row); }
     });
+
+    // Deep link from a victor's name elsewhere on the site (?member=Name):
+    // open that member's dropdown and scroll them into view.
+    const wanted = new URLSearchParams(location.search).get("member");
+    if (wanted) {
+      const card = [...mount.querySelectorAll(".member-card")].find(c => c.dataset.name === wanted.toLowerCase().trim());
+      if (card) {
+        const row = card.querySelector(".member-row");
+        if (!card.classList.contains("open")) toggle(row);
+        setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+      } else {
+        mount.insertAdjacentHTML("afterbegin", `<div class="empty-state" style="margin-bottom:14px;"><div class="title">${esc(wanted)} isn't on the clan roster</div>Only clan members have a profile here.</div>`);
+      }
+    }
   })();
 </script>
 </body>

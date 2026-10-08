@@ -855,7 +855,7 @@ function buildMemberStats(byLevel, clanPoints, unrated = new Map(), combinedRank
           .sort((a, b) => a.position - b.position)
           .map((l) => ({ name: l.name, position: l.position })),
       },
-      top: all.slice(0, 5),
+      completions: all, // every completion, hardest first (the page scrolls it)
     });
   }
   return out;
@@ -866,7 +866,7 @@ const EMPTY_MEMBER_STATS = {
   extremeCount: 0,
   mostRecent: null,
   firstVictories: { count: 0, levels: [] },
-  top: [],
+  completions: [],
 };
 
 // Discord profile picture URL for a clan roster entry. Members with a custom
@@ -888,7 +888,7 @@ function discordAvatarUrl(m) {
 }
 
 async function getMembersCached(env) {
-  return cached(env, "members:v11", 900, async () => {
+  return cached(env, "members:v12", 900, async () => {
     const { byLevel, members } = await getClanCompletionsCached(env);
     const clanPoints = buildClanPointsMap(byLevel);
 
