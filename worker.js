@@ -62,6 +62,7 @@ export default {
       if (pathname === "/api/list") return await handleList(env, ctx, request);
       if (pathname === "/api/monthly") return await handleMonthly(env, ctx);
       if (pathname === "/api/recent") return await handleRecent(env, ctx, request);
+      if (pathname === "/api/list-debug") return await handleListDebug(env);
       if (pathname === "/api/progress") return await handleProgress(env, ctx);
       if (pathname === "/api/videos") return await handleVideos(env, ctx);
       if (pathname === "/api/unrated") return await handleUnrated(env, ctx);
@@ -80,11 +81,14 @@ function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
 
+// ttlSeconds can also be a function of the fresh result, so a result that's
+// known to be incomplete can be kept for much less time than a good one.
 async function cached(env, key, ttlSeconds, loader) {
   const hit = await env.CACHE.get(key, "json").catch(() => null);
   if (hit) return hit;
   const fresh = await loader();
-  await env.CACHE.put(key, JSON.stringify(fresh), { expirationTtl: ttlSeconds }).catch(() => {});
+  const ttl = typeof ttlSeconds === "function" ? ttlSeconds(fresh) : ttlSeconds;
+  await env.CACHE.put(key, JSON.stringify(fresh), { expirationTtl: Math.max(60, ttl) }).catch(() => {});
   return fresh;
 }
 
@@ -137,12 +141,28 @@ async function getRatedEntries(env) {
     .sort((a, b) => a.rank - b.rank);
 }
 
+// /api/list-debug -> how complete the last build of the list was: roster size,
+// how many members' records have never loaded / are overdue a refresh, how many
+// levels ended up with completions, and the rated list's length.
+async function handleListDebug(env) {
+  const { meta } = await getClanCompletionsCached(env);
+  const rated = await getRatedEntries(env);
+  return json({ ratedLevelsOnList: rated.length, ...meta });
+}
+
 async function handleList(env, ctx, request) {
   const rated = await getRatedEntries(env);
   const wantsUnrated = request && new URL(request.url).searchParams.get("unrated");
   if (!wantsUnrated) return json(rated);
-  const { merged } = await combineWithUnrated(env, rated);
-  return json(merged);
+  try {
+    const { merged } = await combineWithUnrated(env, rated);
+    return json(merged);
+  } catch (err) {
+    // The UNRATED overlay is optional: if the sheet can't be read, the rated
+    // list must still load in full rather than failing the whole request.
+    console.warn("Unrated overlay skipped (UNRATED tab unreadable):", String(err));
+    return json(rated);
+  }
 }
 
 /* ============================================================
@@ -306,34 +326,63 @@ function recordVideoUrl(r) {
   return r.video_url ?? r.videoUrl ?? null;
 }
 
-const MAX_MEMBERS_WALKED = 45; // keep total subrequests under Workers' per-request cap
+const MAX_MEMBERS_WALKED = 80; // hard ceiling on roster size considered
+const PROFILE_TTL_MS = 15 * 60 * 1000; // how old a member's stored records may get before a refresh
+const MAX_PROFILE_FETCHES_PER_RUN = 26; // new profile requests per refresh — keeps one request under Workers' 50-subrequest limit
+const PROFILE_BATCH = 9; // requested in small batches so AREDL doesn't rate-limit a burst
+
+// Each member's records are kept in KV (just the three fields used: level,
+// date, video) and refreshed a bounded number of members at a time, oldest
+// first. So a refresh can never blow the subrequest limit however big the
+// clan gets, and one failed request just leaves that member's previous
+// records in place instead of making their completions vanish.
+async function refreshProfileStore(env, members) {
+  const store = (await env.CACHE.get("profiles:v2", "json").catch(() => null)) || {};
+  const now = Date.now();
+  const due = members
+    .filter((m) => !store[m.id] || now - store[m.id].at > PROFILE_TTL_MS)
+    .sort((a, b) => (store[a.id]?.at || 0) - (store[b.id]?.at || 0))
+    .slice(0, MAX_PROFILE_FETCHES_PER_RUN);
+
+  let changed = false;
+  for (let i = 0; i < due.length; i += PROFILE_BATCH) {
+    const results = await Promise.all(
+      due.slice(i, i + PROFILE_BATCH).map(async (m) => {
+        try {
+          const profile = await fetchMemberProfile(env, m.id);
+          const records = (profile.records || []).map((r) => ({
+            level_id: recordLevelId(r),
+            achieved_at: recordAchievedAt(r),
+            video_url: recordVideoUrl(r),
+          }));
+          return [m.id, { at: now, records }];
+        } catch (err) {
+          console.warn(`Couldn't load AREDL profile for ${m.global_name || m.username} (keeping older records if any):`, String(err));
+          return null;
+        }
+      })
+    );
+    for (const r of results) if (r) { store[r[0]] = r[1]; changed = true; }
+  }
+  if (changed) await env.CACHE.put("profiles:v2", JSON.stringify(store)).catch(() => {});
+  return store;
+}
 
 // level AREDL-uuid -> { level, completions: [{ member, record }] }, merged
 // from every clan member's own profile. See the file-header comment above
 // for why this replaces the clan endpoint's first-victor-only records.
 async function getClanCompletionsCached(env) {
-  return cached(env, "completions:v3", 900, async () => {
+  // An incomplete result (some members' records never loaded) is only kept for
+  // a minute so it fills in quickly; a complete one for 15 minutes.
+  return cached(env, "completions:v4", (r) => (r.meta.profilesMissing ? 60 : 900), async () => {
     const [roster, levels] = await Promise.all([getClanRosterCached(env), fetchAredlLevels(env)]);
     const levelById = new Map(levels.map((l) => [l.id, l]));
 
     const members = roster.slice(0, MAX_MEMBERS_WALKED);
-    if (roster.length > MAX_MEMBERS_WALKED) {
-      console.warn(
-        `ROSE has ${roster.length} members — only the first ${MAX_MEMBERS_WALKED} were walked for completions this cache cycle.`
-      );
-    }
-
-    const perMember = await Promise.all(
-      members.map(async (m) => {
-        try {
-          const profile = await fetchMemberProfile(env, m.id);
-          return { member: m, records: profile.records || [] };
-        } catch (err) {
-          console.warn(`Couldn't load AREDL profile for ${m.global_name || m.username}:`, String(err));
-          return { member: m, records: [] };
-        }
-      })
-    );
+    const store = await refreshProfileStore(env, members);
+    const perMember = members.map((m) => ({ member: m, records: store[m.id]?.records || [] }));
+    const profilesMissing = members.filter((m) => !store[m.id]).length;
+    const profilesStale = members.filter((m) => store[m.id] && Date.now() - store[m.id].at > PROFILE_TTL_MS).length;
 
     const byLevel = new Map();
     for (const { member, records } of perMember) {
@@ -356,7 +405,16 @@ async function getClanCompletionsCached(env) {
       entry.completions.push({ member, record });
     }
 
-    return { byLevel: Object.fromEntries(byLevel), members: perMember.map((p) => p.member) };
+    const meta = {
+      roster: roster.length,
+      membersWalked: members.length,
+      profilesMissing,
+      profilesStale,
+      levelsWithCompletions: byLevel.size,
+      flexiRecords: flexi.length,
+      builtAt: new Date().toISOString(),
+    };
+    return { byLevel: Object.fromEntries(byLevel), members: perMember.map((p) => p.member), meta };
   });
 }
 
@@ -371,7 +429,7 @@ async function getClanCompletionsCached(env) {
    Completion date: the video's published date wins when there's a
    YouTube link; otherwise ?COMPDATE (D/M/Y). Needs one or the other.
    ============================================================ */
-const FLEXI_MAX_DATE_FETCHES = 3; // new YouTube lookups per refresh (each may try up to 3 ways; keeps subrequests low) — the rest resolve on later refreshes
+const FLEXI_MAX_DATE_FETCHES = 2; // new YouTube lookups per refresh (each may try up to 3 ways; keeps subrequests low) — the rest resolve on later refreshes
 
 const normName = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -1014,8 +1072,11 @@ function discordAvatarUrl(m) {
 }
 
 async function getMembersCached(env) {
-  return cached(env, "members:v13", 900, async () => {
-    const { byLevel, members } = await getClanCompletionsCached(env);
+  // Built from the completions, so if those were incomplete this is too: keep it only briefly.
+  let incomplete = false;
+  return cached(env, "members:v14", () => (incomplete ? 60 : 900), async () => {
+    const { byLevel, members, meta } = await getClanCompletionsCached(env);
+    incomplete = !!meta?.profilesMissing;
     const clanPoints = buildClanPointsMap(byLevel);
 
     // Unrated levels (UNRATED sheet tab) count as extreme completions for every
