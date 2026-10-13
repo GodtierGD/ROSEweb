@@ -21,7 +21,7 @@
   <div class="page-head">
     <div class="eyebrow">Ranked by AREDL placement</div>
     <h1>The List</h1>
-    <p>Every rated level a clan member has beaten, sorted hardest to easiest. Tick <b>Unrated</b> to slot in the levels AREDL hasn't rated yet, at the spot the clan has given them.</p>
+    <p>Every rated level a clan member has beaten, sorted hardest to easiest (or pick <b>Members' Hardests</b> to see only each member's single hardest). Tick <b>Unrated</b> to slot in the levels AREDL hasn't rated yet, at the spot the clan has given them.</p>
   </div>
 </header>
 
@@ -34,6 +34,7 @@
         <option value="internal">Sort: CLAN Ranking</option>
         <option value="aredl">Sort: AREDL Ranking</option>
         <option value="name">Sort: Level Name</option>
+        <option value="hardests">Sort: Members' Hardests</option>
       </select>
       <label class="check-chip" title="Include levels AREDL hasn't rated yet"><input type="checkbox" id="show-unrated"> Unrated</label>
     </div>
@@ -68,10 +69,34 @@
     if (showUnrated && pool.some(l => l.combinedRank != null)) pool.forEach(l => { l.internalRank = l.combinedRank; });
     else assignInternalRanks(pool);
 
+    const order = l => l.combinedRank ?? l.rank;
+
+    // "Members' Hardests": only the levels that are the hardest level of at
+    // least one clan member, numbered 1, 2, 3… hardest first. Worked out from
+    // the whole pool (before any search) so the numbers stay put while you
+    // search. A member's hardest = the first level in difficulty order that
+    // they're a victor of (verifier or one of the following victors).
+    let source = pool;
+    const hardestOf = new Map(); // level -> member names whose hardest it is
+    if (sort === "hardests") {
+      const seen = new Set();
+      for (const lvl of [...pool].sort((a, b) => order(a) - order(b))) {
+        for (const name of [lvl.verifier, ...(lvl.followingVictors || [])]) {
+          const key = String(name).toLowerCase().trim();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          if (!hardestOf.has(lvl)) hardestOf.set(lvl, []);
+          hardestOf.get(lvl).push(name);
+        }
+      }
+      source = pool.filter(l => hardestOf.has(l)).sort((a, b) => order(a) - order(b));
+      source.forEach((l, i) => { l.hardestRank = i + 1; });
+    }
+
     // Matches a player on either side: the level's listed verifier, or
     // anyone in followingVictors (every other clan member who's also
     // beaten it) — so searching a name surfaces every completion of theirs.
-    let rows = pool.filter(l =>
+    let rows = source.filter(l =>
       !q || l.name.toLowerCase().includes(q) || l.verifier.toLowerCase().includes(q)
       || (l.followingVictors || []).some(v => v.toLowerCase().includes(q))
     );
@@ -79,7 +104,6 @@
     // CLAN and AREDL modes share the same underlying order (hardest to
     // easiest) — they only differ in which number ends up on the badge.
     // Name mode sorts alphabetically but keeps the stable CLAN rank.
-    const order = l => l.combinedRank ?? l.rank;
     if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
     else rows.sort((a, b) => order(a) - order(b));
 
@@ -88,7 +112,10 @@
       mount.innerHTML = `<div class="empty-state"><div class="title">No levels match</div>Try a different search term.</div>`;
       return;
     }
-    const display = rows.map(lvl => applyRankDisplay(lvl, sort));
+    const display = rows.map(lvl => sort === "hardests"
+      ? { ...applyRankDisplay(lvl, "internal"), rank: lvl.hardestRank,
+          extraHTML: `<div class="hardest-of">Hardest of ${hardestOf.get(lvl).map(memberLink).join(", ")}</div>` }
+      : applyRankDisplay(lvl, sort));
     mount.innerHTML = display.map((lvl, i) => levelCardHTML(lvl, i)).join("");
     hydrateThumbnails(mount, display);
   }

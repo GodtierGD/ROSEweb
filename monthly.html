@@ -30,6 +30,7 @@
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
       <select id="month-select" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;"></select>
       <select id="sort" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 14px;color:var(--text);font-family:var(--font-body);font-size:14px;">
+        <option value="monthly">Sort: Monthly Ranking</option>
         <option value="internal">Sort: CLAN Ranking</option>
         <option value="aredl">Sort: AREDL Ranking</option>
         <option value="name">Sort: Level Name</option>
@@ -69,14 +70,27 @@
 
     let rows = [...(months[active] || [])];
     if (sort === "name") rows.sort((a, b) => a.name.localeCompare(b.name));
-    else rows.sort((a, b) => a.rank - b.rank);
+    else rows.sort((a, b) => a.rank - b.rank); // monthly / CLAN / AREDL all share the difficulty order
 
     const mount = document.getElementById("month-mount");
     if (!rows.length) {
       mount.innerHTML = `<div class="empty-state"><div class="title">Nothing logged yet</div>No completions recorded for ${esc(active)}.</div>`;
       return;
     }
-    const display = rows.map(lvl => applyRankDisplay(lvl, sort));
+    let display;
+    if (sort === "monthly") {
+      // Monthly Ranking: spots count down from #1 through the month, and every
+      // victor takes a spot — so a level with 2 victors this month pushes the
+      // level under it down by 2 (one extra spot per additional victor).
+      let spot = 1;
+      display = rows.map(lvl => {
+        const card = { ...applyRankDisplay(lvl, "internal"), rank: spot, altRankLabel: `CLAN #${lvl.internalRank} · AREDL #${lvl.rank}` };
+        spot += 1 + (lvl.followingVictors || []).length;
+        return card;
+      });
+    } else {
+      display = rows.map(lvl => applyRankDisplay(lvl, sort));
+    }
     mount.innerHTML = display.map((lvl, i) => levelCardHTML(lvl, i)).join("");
     hydrateThumbnails(mount, display);
   }

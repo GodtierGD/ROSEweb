@@ -377,6 +377,7 @@ main { padding-bottom: 96px; }
   margin-top: 2px;
 }
 .level-meta .by b { color: var(--text); font-weight: 600; }
+.hardest-of { font-size: 12px; font-style: normal; color: var(--text-faint); margin-top: 6px; }
 .when { font-size: 12px; color: var(--text-faint); margin-left: 8px; }
 .extra-victors {
   font: inherit; font-size: 12px;
