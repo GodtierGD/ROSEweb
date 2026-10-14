@@ -199,7 +199,7 @@ function levelCardHTML(level, index) {
     ? `<div class="victor-list" hidden>${level.followingVictors.map((v) => `<span class="victor-chip">${memberLink(v)}</span>`).join("")}</div>`
     : "";
   return `
-    <div class="level-card" data-card="${index}">
+    <div class="level-card${level.legacy ? " legacy" : ""}" data-card="${index}">
       <div class="bg-layer" style="${bgStyle}"></div>
       <div class="fade-layer"></div>
       <div class="rank ${tier}">${level.rankText ?? `#${level.rank}`}</div>
@@ -210,6 +210,7 @@ function levelCardHTML(level, index) {
         <div class="name-row">
           <div class="name">${esc(level.name)}</div>
           ${level.unrated ? `<span class="unrated-tag" title="Not rated on AREDL yet">Unrated</span>` : ""}
+          ${level.legacy ? `<span class="unrated-tag legacy-tag" title="Demoted off the AREDL main list — earns no points">Legacy</span>` : ""}
           ${level.altRankLabel ? `<span class="alt-rank">${esc(level.altRankLabel)}</span>` : ""}
         </div>
         <div class="by"><b>${memberLink(level.verifier)}</b>${flagHTML(level.verifierCountry)}${level.dateText ? `<span class="when">${esc(level.dateText)}</span>` : ""}${extraVictors}</div>

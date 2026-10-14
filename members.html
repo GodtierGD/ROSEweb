@@ -106,7 +106,7 @@
           <h4>All completions (${comps.length})</h4>
           <div class="comp-scroll">
             <ol class="top-list">
-              ${comps.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${t.videoUrl && /^https?:\/\//i.test(t.videoUrl) ? `<a class="vid-link" href="${esc(t.videoUrl)}" target="_blank" rel="noopener" title="Watch ${esc(t.name)}">${esc(t.name)}</a>` : esc(t.name)}</span><span class="meta">${t.unrated ? "Unrated" : "AREDL #" + t.position}${t.points != null ? ` · ${t.unrated ? "≈ " : ""}${t.points} pts` : ""}</span></li>`).join("")}
+              ${comps.map((t, i) => `<li><span class="n">${i + 1}</span><span class="nm" title="${esc(t.name)}">${t.videoUrl && /^https?:\/\//i.test(t.videoUrl) ? `<a class="vid-link" href="${esc(t.videoUrl)}" target="_blank" rel="noopener" title="Watch ${esc(t.name)}">${esc(t.name)}</a>` : esc(t.name)}</span><span class="meta">${t.unrated ? "Unrated" : "AREDL #" + t.position}${t.legacy ? " · Legacy" : ""}${t.points != null ? ` · ${t.unrated ? "≈ " : ""}${t.points} pts` : ""}</span></li>`).join("")}
             </ol>
           </div>
         </div>

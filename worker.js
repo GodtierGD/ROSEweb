@@ -117,10 +117,15 @@ function clanPointsForRank(clanRank, total) {
 // level AREDL-uuid -> clan-curve points, ranked by real AREDL placement
 // across every main-list level the clan has beaten (not a subset — points
 // must mean the same thing on every page, so this always uses the full set).
+// A level AREDL has demoted off the main list (status "Legacy"). They stay on
+// the clan's list, at the bottom and tinted grey, but earn no points and
+// aren't part of the points curve (so they don't take the curve's bottom spot).
+const isLegacy = (level) => String(level?.status ?? "").toLowerCase() === "legacy";
+
 function buildClanPointsMap(byLevel) {
   const levels = Object.values(byLevel)
     .map(({ level }) => level)
-    .filter((level) => level.position != null)
+    .filter((level) => level.position != null && !isLegacy(level))
     .sort((a, b) => a.position - b.position);
   const total = levels.length;
   const map = new Map();
@@ -199,7 +204,8 @@ async function handleRecent(env, ctx, request) {
         name: level.name,
         verifier: member.global_name || member.username,
         verifierCountry: member.country ?? null,
-        points: clanPoints.get(level.id) ?? null,
+        points: isLegacy(level) ? 0 : clanPoints.get(level.id) ?? null,
+        legacy: isLegacy(level),
         videoUrl: recordVideoUrl(record),
         achievedAt: at,
         followingVictors: [],
@@ -282,7 +288,8 @@ function levelEntryFromCompletions(level, completions, clanPoints) {
       "Unknown",
     verifier: first.member.global_name || first.member.username,
     verifierCountry: first.member.country ?? null,
-    points: clanPoints?.get(level.id) ?? level.points ?? null,
+    points: isLegacy(level) ? 0 : clanPoints?.get(level.id) ?? level.points ?? null,
+    legacy: isLegacy(level),
     videoUrl: recordVideoUrl(first.record),
     achievedAt: recordAchievedAt(first.record),
     followingVictors: rest.map((c) => c.member.global_name || c.member.username),
@@ -941,8 +948,9 @@ async function combineWithUnrated(env, rated) {
     if (!slots[i].unrated) { i++; continue; }
     let j = i;
     while (j + 1 < total && slots[j + 1].unrated) j++;
-    const above = i === 0 ? CLAN_POINTS_MAX : slots[i - 1].points;
-    const below = j === total - 1 ? CLAN_POINTS_MIN : slots[j + 1].points;
+    const bound = (e) => (e.legacy ? CLAN_POINTS_MIN : e.points); // a legacy level earns 0, so price against the minimum instead
+    const above = i === 0 ? CLAN_POINTS_MAX : bound(slots[i - 1]);
+    const below = j === total - 1 ? CLAN_POINTS_MIN : bound(slots[j + 1]);
     const k = j - i + 1;
     for (let t = 1; t <= k; t++) slots[i + t - 1].points = Math.round(above + ((below - above) * t) / (k + 1));
     i = j + 1;
@@ -1002,7 +1010,8 @@ function buildMemberStats(byLevel, clanPoints, unrated = new Map(), combinedRank
     levelId: c.level.level_id ?? null, // in-game id, for thumbnails
     name: c.level.name,
     position: c.level.position,
-    points: clanPoints.get(c.level.id) ?? null,
+    points: isLegacy(c.level) ? 0 : clanPoints.get(c.level.id) ?? null,
+    legacy: isLegacy(c.level),
     videoUrl: c.videoUrl || null,
     unrated: false,
     placement: combinedRankById.get(c.level.id) ?? null,
@@ -1074,7 +1083,7 @@ function discordAvatarUrl(m) {
 async function getMembersCached(env) {
   // Built from the completions, so if those were incomplete this is too: keep it only briefly.
   let incomplete = false;
-  return cached(env, "members:v14", () => (incomplete ? 60 : 900), async () => {
+  return cached(env, "members:v15", () => (incomplete ? 60 : 900), async () => {
     const { byLevel, members, meta } = await getClanCompletionsCached(env);
     incomplete = !!meta?.profilesMissing;
     const clanPoints = buildClanPointsMap(byLevel);

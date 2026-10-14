@@ -331,6 +331,9 @@ main { padding-bottom: 96px; }
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* Levels AREDL has demoted (Legacy): greyed out, and worth no points. */
+.level-card.legacy { filter: grayscale(1) brightness(0.88); }
+.unrated-tag.legacy-tag { color: var(--text-faint); border-color: var(--text-faint); }
 .unrated-tag {
   flex-shrink: 0;
   font-family: var(--font-display);
