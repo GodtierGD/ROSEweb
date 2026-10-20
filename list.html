@@ -13,6 +13,25 @@
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#ff3b52">
 <link rel="stylesheet" href="style.css">
+<style>
+  .tm-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; padding:12px 16px; border:1px solid var(--accent); border-radius:var(--radius); background:rgba(255,59,82,0.08); font-size:14px; }
+  .tm-banner[hidden] { display:none; }
+  .tm-overlay { position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,0.65); }
+  .tm-overlay.open { display:flex; }
+  .tm-box { width:min(430px,100%); background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius); padding:24px; }
+  .tm-box h3 { margin:0 0 4px; font-family:var(--font-display); font-size:22px; display:flex; justify-content:space-between; align-items:center; }
+  .tm-close { cursor:pointer; color:var(--text-muted); font-size:26px; line-height:1; background:none; border:none; }
+  .tm-close:hover { color:var(--text); }
+  .tm-desc { margin:0 0 16px; color:var(--text-muted); font-size:14px; }
+  .tm-row { display:flex; gap:10px; margin-bottom:12px; }
+  .tm-row input[type=date] { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:11px 14px; color:var(--text); font-family:var(--font-body); font-size:14px; color-scheme:dark; }
+  .tm-btn { background:var(--surface-2); border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:10px 14px; color:var(--text); font-family:var(--font-display); font-weight:600; font-size:14px; cursor:pointer; }
+  .tm-btn:hover { border-color:var(--accent); }
+  .tm-btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tm-nav { display:flex; gap:10px; }
+  .tm-nav .tm-btn { flex:1; }
+  .tm-msg { margin-top:12px; min-height:20px; font-size:13px; color:var(--text-muted); }
+</style>
 </head>
 <body>
 <nav class="site-nav" id="site-nav"></nav>
@@ -36,8 +55,11 @@
         <option value="hardests">Sort: MEMBER Hardest</option>
         <option value="name">Sort: Level Name</option>
       </select>
-      <label class="check-chip" title="Include levels AREDL hasn't rated yet"><input type="checkbox" id="show-unrated"> Unrated</label>
+      <label class="check-chip" id="unrated-chip" title="Include levels AREDL hasn't rated yet"><input type="checkbox" id="show-unrated"> Unrated</label>
+      <button type="button" class="check-chip" id="tm-open-btn" title="See the list as it stood on a past date">&#128336; Time Machine</button>
     </div>
+
+    <div class="tm-banner" id="tm-banner" hidden></div>
 
     <div id="list-mount">
       <div class="skel" style="height:104px;margin-bottom:12px;"></div>
@@ -46,6 +68,22 @@
     </div>
   </div>
 </main>
+
+<div class="tm-overlay" id="tm-overlay">
+  <div class="tm-box" role="dialog" aria-modal="true" aria-labelledby="tm-title">
+    <h3 id="tm-title">&#128336; Time Machine <button type="button" class="tm-close" id="tm-close" aria-label="Close">&times;</button></h3>
+    <p class="tm-desc">See the List as it stood on any past date — who had beaten what by then, with the points worked out from that day's list.</p>
+    <div class="tm-row">
+      <input type="date" id="tm-date">
+      <button type="button" class="tm-btn primary" id="tm-go">View</button>
+    </div>
+    <div class="tm-nav">
+      <button type="button" class="tm-btn" id="tm-prev">&#9664; Previous change</button>
+      <button type="button" class="tm-btn" id="tm-next">Next change &#9654;</button>
+    </div>
+    <div class="tm-msg" id="tm-msg"></div>
+  </div>
+</div>
 
 <footer class="container"><span id="clan-name-footer"></span> Demonlist — built on the AREDL API. Not affiliated with or endorsed by AREDL.</footer>
 
@@ -120,12 +158,106 @@
     hydrateThumbnails(mount, display);
   }
 
-  (async () => {
-    allLevels = await apiGet("/list?unrated=1", MOCK_LIST);
+  /* ---------------- Time Machine ----------------
+     asOf = null means the live list; otherwise a YYYY-MM-DD date, and the
+     Worker returns the list as it stood at the end of that day. */
+  let asOf = null;
+  let events = null; // [{ date, changes: [...] }] oldest first, fetched on first use
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+  const $ = (id) => document.getElementById(id);
+  const fmtDay = (d) => new Date(d + "T12:00:00Z").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+
+  function updateBanner() {
+    const banner = $("tm-banner");
+    banner.hidden = !asOf;
+    $("unrated-chip").hidden = !!asOf; // unrated levels have no dates, so they aren't part of past lists
+    if (!asOf) { banner.innerHTML = ""; return; }
+    banner.innerHTML = `<span>&#128336; Viewing the list as of <b>${esc(fmtDay(asOf))}</b></span><button type="button" class="tm-btn" id="tm-return">Return to present</button>`;
+    $("tm-return").addEventListener("click", () => setAsOf(null));
+  }
+
+  async function loadList() {
+    const mount = $("list-mount");
+    if (!asOf) {
+      allLevels = await apiGet("/list?unrated=1", MOCK_LIST);
+    } else {
+      mount.innerHTML = `<div class="skel" style="height:104px;margin-bottom:12px;"></div><div class="skel" style="height:104px;margin-bottom:12px;opacity:.6;"></div>`;
+      try {
+        // Not apiGet: a past date must never silently fall back to the sample list.
+        const res = await fetch(`${CONFIG.apiBase}/list?asof=${encodeURIComponent(asOf)}`, { headers: { accept: "application/json" } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        allLevels = await res.json();
+      } catch (err) {
+        mount.innerHTML = `<div class="empty-state"><div class="title">Couldn't load that date</div>${esc(String(err.message || err))}. Try another date, or return to the present.</div>`;
+        updateBanner();
+        return;
+      }
+    }
+    updateBanner();
+    if (!allLevels.length && asOf) {
+      $("list-mount").innerHTML = `<div class="empty-state"><div class="title">Nothing on the list yet</div>The clan hadn't beaten any levels by ${esc(fmtDay(asOf))}.</div>`;
+      return;
+    }
     draw();
-    document.getElementById("search").addEventListener("input", draw);
-    document.getElementById("sort").addEventListener("change", draw);
-    document.getElementById("show-unrated").addEventListener("change", draw);
+  }
+
+  async function setAsOf(date) {
+    asOf = date && date < todayStr() ? date : null; // today (or later) is just the live list
+    await loadList();
+  }
+
+  async function getEvents() {
+    if (events) return events;
+    try {
+      const res = await fetch(`${CONFIG.apiBase}/list-events`, { headers: { accept: "application/json" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      events = await res.json();
+    } catch { events = []; }
+    return events;
+  }
+
+  function openModal() {
+    $("tm-date").max = todayStr();
+    $("tm-date").value = asOf || todayStr();
+    $("tm-msg").textContent = "";
+    $("tm-overlay").classList.add("open");
+  }
+  const closeModal = () => $("tm-overlay").classList.remove("open");
+
+  async function stepChange(direction) {
+    const evs = await getEvents();
+    const current = $("tm-date").value || todayStr();
+    const target = direction < 0
+      ? [...evs].reverse().find(e => e.date < current)
+      : evs.find(e => e.date > current);
+    if (!target) {
+      $("tm-msg").textContent = direction < 0 ? "No earlier changes." : "No later changes — you're at the present.";
+      return;
+    }
+    $("tm-date").value = target.date;
+    const shown = target.changes.slice(0, 3).join(", ") + (target.changes.length > 3 ? ` +${target.changes.length - 3} more` : "");
+    $("tm-msg").textContent = `${fmtDay(target.date)} — ${shown}`;
+    await setAsOf(target.date);
+  }
+
+  (async () => {
+    await loadList();
+    $("search").addEventListener("input", draw);
+    $("sort").addEventListener("change", draw);
+    $("show-unrated").addEventListener("change", draw);
+
+    $("tm-open-btn").addEventListener("click", openModal);
+    $("tm-close").addEventListener("click", closeModal);
+    $("tm-overlay").addEventListener("click", (e) => { if (e.target === $("tm-overlay")) closeModal(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+    $("tm-go").addEventListener("click", async () => {
+      const d = $("tm-date").value;
+      if (!d) return;
+      closeModal();
+      await setAsOf(d);
+    });
+    $("tm-prev").addEventListener("click", () => stepChange(-1));
+    $("tm-next").addEventListener("click", () => stepChange(1));
   })();
 </script>
 </body>

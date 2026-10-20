@@ -4,6 +4,8 @@
  * Routes:
  *   GET /api/list              -> every main-list level ROSE has beaten, any member (cached)
  *                                 add ?unrated=1 to also merge in placed UNRATED-sheet levels
+ *   GET /api/list?asof=YYYY-MM-DD -> the list as it stood on that date (the Time Machine)
+ *   GET /api/list-events       -> dates the list changed (a completion landed), for stepping back and forth
  *   GET /api/monthly           -> the same, grouped by achieved_at month
  *   GET /api/recent            -> the newest individual completions by any clan member (?limit=4)
  *   GET /api/progress          -> per-player progress, from the "PROGRESS" tab of a Google Sheet
@@ -63,6 +65,7 @@ export default {
       if (pathname === "/api/monthly") return await handleMonthly(env, ctx);
       if (pathname === "/api/recent") return await handleRecent(env, ctx, request);
       if (pathname === "/api/list-debug") return await handleListDebug(env);
+      if (pathname === "/api/list-events") return await handleListEvents(env);
       if (pathname === "/api/progress") return await handleProgress(env, ctx);
       if (pathname === "/api/videos") return await handleVideos(env, ctx);
       if (pathname === "/api/unrated") return await handleUnrated(env, ctx);
@@ -146,6 +149,72 @@ async function getRatedEntries(env) {
     .sort((a, b) => a.rank - b.rank);
 }
 
+/* ============================================================
+   TIME MACHINE — /api/list?asof=YYYY-MM-DD
+   The list as it stood at the end of that day: only completions achieved by
+   then, with AREDL's own positions / points / status as they were then (AREDL
+   can return its list "at" a timestamp), and the clan's points curve
+   recomputed over just the levels the clan had beaten by then. Completions
+   with no date can't be placed in the past, so they only exist "now". The
+   UNRATED overlay isn't part of past views (those levels have no dates).
+   ============================================================ */
+async function getLevelsAtCached(env, asof, endIso) {
+  return cached(env, `levels-at:v1:${asof}`, 21600, async () => {
+    const res = await fetch(`${env.AREDL_API_BASE}/v2/api/aredl/levels?at=${encodeURIComponent(endIso)}`);
+    if (!res.ok) throw new Error(`AREDL level list at ${asof} failed: ${res.status}`);
+    const levels = await res.json();
+    return levels.map((l) => ({
+      id: l.id, level_id: l.level_id ?? null, name: l.name, position: l.position ?? null,
+      status: l.status ?? null, points: l.points ?? null, publisher: l.publisher ?? null, creators: l.creators ?? null,
+    }));
+  });
+}
+
+async function handleListAsOf(env, asof) {
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(asof) ? Date.parse(`${asof}T23:59:59.999Z`) : NaN;
+  if (isNaN(t)) return json({ error: "asof must be a date like 2026-03-15" }, 400);
+  const today = new Date().toISOString().slice(0, 10);
+  if (asof >= today) return json(await getRatedEntries(env)); // today or later = the live list
+
+  const endIso = new Date(t).toISOString();
+  const [{ byLevel }, levelsThen] = await Promise.all([getClanCompletionsCached(env), getLevelsAtCached(env, asof, endIso)]);
+  const levelThenById = new Map(levelsThen.map((l) => [l.id, l]));
+
+  const past = {};
+  for (const [id, { completions }] of Object.entries(byLevel)) {
+    const level = levelThenById.get(id);
+    if (!level || level.position == null) continue; // not on AREDL's list yet (or already off it) back then
+    const done = completions.filter((c) => {
+      const ms = new Date(recordAchievedAt(c.record) || NaN).getTime();
+      return !isNaN(ms) && ms <= t;
+    });
+    if (done.length) past[id] = { level, completions: done };
+  }
+
+  const clanPoints = buildClanPointsMap(past);
+  const entries = Object.values(past).map(({ level, completions }) => levelEntryFromCompletions(level, completions, clanPoints));
+  return json(entries.sort((a, b) => a.rank - b.rank));
+}
+
+// Dates the list changed (someone's completion landed) with what happened,
+// oldest first — drives the Time Machine's previous / next change buttons.
+async function handleListEvents(env) {
+  const { byLevel } = await getClanCompletionsCached(env);
+  const byDate = new Map();
+  for (const { level, completions } of Object.values(byLevel)) {
+    if (level.position == null) continue;
+    for (const { member, record } of completions) {
+      const at = recordAchievedAt(record);
+      const ms = new Date(at || NaN).getTime();
+      if (isNaN(ms)) continue;
+      const date = new Date(ms).toISOString().slice(0, 10);
+      if (!byDate.has(date)) byDate.set(date, []);
+      byDate.get(date).push(`${member.global_name || member.username} beat ${level.name}`);
+    }
+  }
+  return json([...byDate].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, changes]) => ({ date, changes })));
+}
+
 // /api/list-debug -> how complete the last build of the list was: roster size,
 // how many members' records have never loaded / are overdue a refresh, how many
 // levels ended up with completions, and the rated list's length.
@@ -156,6 +225,8 @@ async function handleListDebug(env) {
 }
 
 async function handleList(env, ctx, request) {
+  const asof = request && new URL(request.url).searchParams.get("asof");
+  if (asof) return await handleListAsOf(env, asof);
   const rated = await getRatedEntries(env);
   const wantsUnrated = request && new URL(request.url).searchParams.get("unrated");
   if (!wantsUnrated) return json(rated);
